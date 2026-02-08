@@ -220,9 +220,7 @@ class SelfAttention(tf.keras.layers.Layer):
         return attention_outputs
 
 
-# Write the fixed code
-with open('/content/EstraNet/fast_attention.py', 'w') as f:
-    f.write(correct_code)
+
 
 print("✅ File replaced with fixed version")
 
