@@ -113,7 +113,7 @@ class Transformer(tf.keras.Model):
         core = self.out_drop(core, training=training)
         score = None
         if self.softmax_attn:
-            core, score = self.out_attn(core, softmax_attn_smoothing, training=training)
+            core, score = self.out_attn(core, softmax_attn_smoothing=softmax_attn_smoothing, training=training)
         
         out = self.fc(tf.reduce_mean(core, axis=1))
         return [out, score] if self.output_attn else [out]
