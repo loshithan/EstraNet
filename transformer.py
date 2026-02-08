@@ -67,7 +67,7 @@ class SoftmaxAttention(tf.keras.layers.Layer):
         self.scale = 1. / (d_head ** 0.5)
 
     def build(self, input_shape):
-        self.smoothing = self.add_weight("smoothing", shape=(), initializer="zeros", trainable=False)
+        self.smoothing = self.add_weight(name="smoothing", shape=(), initializer="zeros", trainable=False)
 
     def call(self, inp, softmax_attn_smoothing=1.0, training=False):
         bsz, slen = shape_list(inp)[:2]
