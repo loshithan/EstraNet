@@ -1,3 +1,4 @@
+# Direct file replacement with correct code
 import math
 import numpy as np
 import tensorflow as tf
@@ -137,20 +138,17 @@ class SelfAttention(tf.keras.layers.Layer):
 
         attention_initializer = _glorot_initializer(self.d_model, self.n_head*self.size_per_head)
 
-        self.value_weight = self.add_weight(
-                "value_weight",
+        self.value_weight = self.add_weight(name="value_weight",
                 shape=(self.d_model, self.n_head, self.size_per_head),
                 initializer=attention_initializer,
                 dtype=tf.float32,
                 trainable=True)
-        self.pos_ft_weight = self.add_weight(
-                "pos_ft_weight",
+        self.pos_ft_weight = self.add_weight(name="pos_ft_weight",
                 shape=(self.d_model, self.n_head, self.size_per_head),
                 initializer=attention_initializer,
                 dtype=tf.float32,
                 trainable=False)
-        self.pos_ft_scale = self.add_weight(
-            "pos_ft_scale",
+        self.pos_ft_scale = self.add_weight(name="pos_ft_scale",
             shape=(1, 1, self.n_head, 1),
             initializer=tf.keras.initializers.Constant(1),
             dtype=tf.float32,
@@ -159,17 +157,21 @@ class SelfAttention(tf.keras.layers.Layer):
         head_left = self.head_init_range[0]
         head_right = self.head_init_range[1]
         head_range = head_right - head_left
-        head_pos = tf.range(head_left+head_range/(2.*self.n_head), head_right, head_range/self.n_head)
-        self.pos_ft_offsets = self.add_weight(
-            "pos_ft_offests",
+        # Use numpy for reliable shape handling across TF versions
+        head_pos = np.linspace(
+            head_left + head_range/(2.0*self.n_head), 
+            head_right - head_range/(2.0*self.n_head), 
+            self.n_head
+        )
+        head_pos_init = head_pos.reshape(1, 1, self.n_head, 1).astype(np.float32)
+        self.pos_ft_offsets = self.add_weight(name="pos_ft_offests",
             shape=(1, 1, self.n_head, 1),
-            initializer=tf.keras.initializers.Constant(head_pos),
+            initializer=tf.keras.initializers.Constant(head_pos_init),
             dtype=tf.float32,
             trainable=True)
 
         output_initializer = _glorot_initializer(self.n_head*self.size_per_head, self.d_model)
-        self.output_weight = self.add_weight(
-                "output_weight",
+        self.output_weight = self.add_weight(name="output_weight",
                 shape=(self.n_head*self.size_per_head, self.d_model),
                 initializer=output_initializer,
                 dtype=tf.float32,
@@ -180,8 +182,7 @@ class SelfAttention(tf.keras.layers.Layer):
         projection_matrix = gen_projection_matrix(
                   self.d_kernel_map, self.size_per_head, seed=seed)
         initializer = tf.keras.initializers.Constant(projection_matrix)
-        self.projection_matrix = self.add_weight(
-            "projection_matrix",
+        self.projection_matrix = self.add_weight(name="projection_matrix",
             shape=projection_matrix.shape,
             initializer=initializer,
             dtype=projection_matrix.dtype,
@@ -219,3 +220,16 @@ class SelfAttention(tf.keras.layers.Layer):
         return attention_outputs
 
 
+# Write the fixed code
+with open('/content/EstraNet/fast_attention.py', 'w') as f:
+    f.write(correct_code)
+
+print("✅ File replaced with fixed version")
+
+# Delete all checkpoints and cache
+# !rm -rf /content/EstraNet/trans_long-* /content/EstraNet/checkpoint* /content/EstraNet/*.index /content/EstraNet/*.data-*
+# !find /content/EstraNet -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+print("✅ Checkpoints deleted")
+print("\n⚠️  NOW RESTART RUNTIME: Runtime → Restart runtime")
+print("Then run your training again")

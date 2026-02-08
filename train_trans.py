@@ -233,14 +233,14 @@ def train(train_dataset, eval_dataset, num_train_batch, num_eval_batch, strategy
     @tf.function
     def train_steps(iterator, steps, bsz, global_step):
         ###### Reset the states of the update variables
-        train_loss.reset_states()
-        grad_norm.reset_states()
+        train_loss.reset_state()
+        grad_norm.reset_state()
         ###### The step function for one training step
         def step_fn(inps, lbls, global_step):
             lbls = tf.squeeze(lbls)
             with tf.GradientTape() as tape:
                 softmax_attn_smoothing = 1. #tf.minimum(float(global_step)/FLAGS.train_steps, 1.)
-                logits = model(inps, softmax_attn_smoothing, training=True)[0]
+                logits = model(inputs=inps, softmax_attn_smoothing=softmax_attn_smoothing, training=True)[0]
                 if FLAGS.dataset == 'CHES20':
                     per_example_loss = tf.reduce_mean(
                         tf.nn.sigmoid_cross_entropy_with_logits(lbls, logits),
@@ -266,7 +266,7 @@ def train(train_dataset, eval_dataset, num_train_batch, num_eval_batch, strategy
         ###### The step function for one evaluation step
         def step_fn(inps, lbls):
             lbls = tf.squeeze(lbls)
-            logits = model(inps)[0]
+            logits = model(inputs=inps)[0]
             if FLAGS.dataset == 'CHES20':
                 per_example_loss = tf.reduce_mean(
                     tf.nn.sigmoid_cross_entropy_with_logits(lbls, logits),
@@ -306,7 +306,7 @@ def train(train_dataset, eval_dataset, num_train_batch, num_eval_batch, strategy
             num_eval_iters = min(FLAGS.max_eval_batch, num_eval_batch)
 
         eval_tr_iter = iter(train_dist_dataset)
-        eval_loss.reset_states()
+        eval_loss.reset_state()
         eval_steps(eval_tr_iter, tf.convert_to_tensor(num_eval_iters), \
                    FLAGS.train_batch_size)
 
@@ -316,7 +316,7 @@ def train(train_dataset, eval_dataset, num_train_batch, num_eval_batch, strategy
         dic['train_loss'] = cur_eval_loss.numpy()
 
         eval_va_iter = iter(eval_dist_dataset)
-        eval_loss.reset_states()
+        eval_loss.reset_state()
         eval_steps(eval_va_iter, tf.convert_to_tensor(num_eval_iters), \
                    FLAGS.eval_batch_size)
 
