@@ -162,9 +162,10 @@ class TemporalGraphBuilder(tf.keras.layers.Layer):
         Args:
             x: Input features [batch, num_nodes, d_model]
         Returns:
+            x: Same features (pass-through)
             adjacency: Adjacency matrix [num_nodes, num_nodes]
         """
-        return self.adjacency
+        return x, self.adjacency
 
 
 class GlobalGraphPooling(tf.keras.layers.Layer):
