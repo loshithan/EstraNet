@@ -114,18 +114,19 @@ class TemporalGraphBuilder(tf.keras.layers.Layer):
         
     def build(self, input_shape):
         self.num_nodes = input_shape[1]
+        
         # Initialize with current shape
         adj_numpy = self._build_adjacency_matrix(self.num_nodes)
         
-        # Make adjacency a non-trainable weight but allow it to be updated
+        # Make adjacency a non-trainable weight
+        # MUST use concrete shape for initialization
         self.adjacency = self.add_weight(
             name='adjacency',
-            shape=(None, None), # Allow dynamic shape
-            initializer=tf.constant_initializer(0.0), # Dummy init
+            shape=(self.num_nodes, self.num_nodes),
+            initializer=tf.constant_initializer(adj_numpy),
             trainable=False,
             dtype=tf.float32
         )
-        self.adjacency.assign(adj_numpy)
         
         super(TemporalGraphBuilder, self).build(input_shape)
     
