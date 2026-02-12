@@ -15,6 +15,7 @@ import tensorflow as tf
 import data_utils
 import data_utils_ches20
 from transformer import Transformer
+from mamba_transformer import MambaNet
 import evaluation_utils
 import evaluation_utils_ches20
 import pickle
@@ -101,6 +102,8 @@ flags.DEFINE_string("head_initialization", default='forward',
       help="Type of the initialization of the positional attention heads, can be in ['forward', 'backward', 'symmetric']")
 flags.DEFINE_bool("softmax_attn", default='True',
       help="Whether to use softmax attention instead of global pooling")
+flags.DEFINE_string("model_type", default='transformer',
+      help="Model architecture: 'transformer' or 'mamba'")
 
 # Evaluation config
 flags.DEFINE_integer("max_eval_batch", default=-1,
@@ -139,26 +142,50 @@ class LRSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
 
 def create_model(n_classes):
-    model = Transformer(
-        n_layer = FLAGS.n_layer,
-        d_model = FLAGS.d_model,
-        d_head = FLAGS.d_head,
-        n_head = FLAGS.n_head,
-        d_inner = FLAGS.d_inner,
-        n_head_softmax = FLAGS.n_head_softmax,
-        d_head_softmax = FLAGS.d_head_softmax,
-        dropout = FLAGS.dropout,
-        n_classes = n_classes,
-        conv_kernel_size = FLAGS.conv_kernel_size,
-        n_conv_layer = FLAGS.n_conv_layer,
-        pool_size = FLAGS.pool_size,
-        d_kernel_map = FLAGS.d_kernel_map,
-        beta_hat_2 = FLAGS.beta_hat_2,
-        model_normalization = FLAGS.model_normalization,
-        head_initialization = FLAGS.head_initialization,
-        softmax_attn = FLAGS.softmax_attn,
-        output_attn = FLAGS.output_attn
-    )
+    if FLAGS.model_type == 'mamba':
+        # Mamba model doesn't use some Transformer-specific params
+        model = MambaNet(
+            n_layer = FLAGS.n_layer,
+            d_model = FLAGS.d_model,
+            d_state = 16,  # Mamba-specific SSM state dimension
+            d_conv = 4,    # Mamba-specific conv dimension
+            expand_factor = 2,  # Mamba inner expansion
+            d_inner = FLAGS.d_inner,
+            d_head_softmax = FLAGS.d_head_softmax,
+            n_head_softmax = FLAGS.n_head_softmax,
+            dropout = FLAGS.dropout,
+            n_classes = n_classes,
+            conv_kernel_size = FLAGS.conv_kernel_size,
+            n_conv_layer = FLAGS.n_conv_layer,
+            pool_size = FLAGS.pool_size,
+            beta_hat_2 = FLAGS.beta_hat_2,
+            model_normalization = FLAGS.model_normalization,
+            use_ff = False,  # Mamba-specific: use feedforward after Mamba layer
+            softmax_attn = FLAGS.softmax_attn,
+            output_attn = FLAGS.output_attn
+        )
+    else:
+        # Original Transformer model
+        model = Transformer(
+            n_layer = FLAGS.n_layer,
+            d_model = FLAGS.d_model,
+            d_head = FLAGS.d_head,
+            n_head = FLAGS.n_head,
+            d_inner = FLAGS.d_inner,
+            n_head_softmax = FLAGS.n_head_softmax,
+            d_head_softmax = FLAGS.d_head_softmax,
+            dropout = FLAGS.dropout,
+            n_classes = n_classes,
+            conv_kernel_size = FLAGS.conv_kernel_size,
+            n_conv_layer = FLAGS.n_conv_layer,
+            pool_size = FLAGS.pool_size,
+            d_kernel_map = FLAGS.d_kernel_map,
+            beta_hat_2 = FLAGS.beta_hat_2,
+            model_normalization = FLAGS.model_normalization,
+            head_initialization = FLAGS.head_initialization,
+            softmax_attn = FLAGS.softmax_attn,
+            output_attn = FLAGS.output_attn
+        )
 
     return model
 
