@@ -4,9 +4,9 @@
 USE_TPU=False
 
 # Experiment (data/checkpoint/directory) config
-DATA_PATH= #Path to the .h5 file containing the dataset
+DATA_PATH=data/ASCAD.h5 #Path to the .h5 file containing the dataset
 DATASET=ASCAD
-CKP_DIR=./
+CKP_DIR=./checkpoints
 CKP_IDX=0
 WARM_START=False
 RESULT_PATH=results
