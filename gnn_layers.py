@@ -144,12 +144,26 @@ class TemporalGraphBuilder(tf.keras.layers.Layer):
                 j = i + offset
                 if 0 <= j < num_nodes and i != j:
                     adj[i, j] = 1.0
+                    
+        # Add self-loops
+        np.fill_diagonal(adj, 1.0)
+        
+        # Symmetric Normalization: D^{-1/2} A D^{-1/2}
+        degrees = np.sum(adj, axis=1)
+        d_inv_sqrt = np.power(degrees, -0.5)
+        d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0.
+        d_mat_inv_sqrt = np.diag(d_inv_sqrt)
+        
+        return np.dot(np.dot(d_mat_inv_sqrt, adj), d_mat_inv_sqrt)
+
+    def call(self, x):
+        """
+        Args:
             x: Input features [batch, num_nodes, d_model]
         Returns:
-            x: Same features (pass-through)
             adjacency: Adjacency matrix [num_nodes, num_nodes]
         """
-        return x, self.adjacency
+        return self.adjacency
 
 
 class GlobalGraphPooling(tf.keras.layers.Layer):
