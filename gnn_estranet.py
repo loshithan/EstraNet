@@ -29,8 +29,8 @@ class GNNEstraNet(tf.keras.Model):
                  n_classes=256,
                  conv_kernel_size=3,
                  n_conv_layer=2,
-                 pool_size=20,
-                 beta_hat_2=150,
+                 pool_size=2,  # CHANGED: Default to 2 for better granularity (was 20)
+                 beta_hat_2=100,
                  model_normalization='preLC',
                  softmax_attn=True,
                  output_attn=False,

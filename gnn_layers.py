@@ -75,7 +75,11 @@ class GraphConvLayer(tf.keras.layers.Layer):
         
         # Neighbor aggregation
         # Need to expand adjacency for batch: [1, num_nodes, num_nodes]
-        adjacency_expanded = tf.expand_dims(adjacency, axis=0)
+        # Use tf.shape(x)[0] instead of None/dynamic shape to be safe
+        batch_size = tf.shape(x)[0]
+        adjacency_expanded = tf.broadcast_to(tf.expand_dims(adjacency, axis=0), 
+                                           [batch_size, tf.shape(adjacency)[0], tf.shape(adjacency)[1]])
+                                           
         # adjacency @ x gives sum of neighbor features
         neighbor_features = tf.matmul(adjacency_expanded, x)  # [batch, num_nodes, d_in]
         h_neighbor = tf.matmul(neighbor_features, self.w_neighbor)
@@ -110,45 +114,36 @@ class TemporalGraphBuilder(tf.keras.layers.Layer):
         
     def build(self, input_shape):
         self.num_nodes = input_shape[1]
-        # Build adjacency matrix as a non-trainable weight
-        adj_numpy = self._build_adjacency_matrix()
+        # Initialize with current shape
+        adj_numpy = self._build_adjacency_matrix(self.num_nodes)
+        
+        # Make adjacency a non-trainable weight but allow it to be updated
         self.adjacency = self.add_weight(
             name='adjacency',
-            shape=(self.num_nodes, self.num_nodes),
-            initializer=tf.constant_initializer(adj_numpy),
-            trainable=False
+            shape=(None, None), # Allow dynamic shape
+            initializer=tf.constant_initializer(0.0), # Dummy init
+            trainable=False,
+            dtype=tf.float32
         )
+        self.adjacency.assign(adj_numpy)
+        
         super(TemporalGraphBuilder, self).build(input_shape)
     
-    def _build_adjacency_matrix(self):
+    def _build_adjacency_matrix(self, num_nodes):
         """
         Create k-NN temporal adjacency matrix.
         Each node connects to k/2 neighbors on each side.
         """
-        adj = np.zeros((self.num_nodes, self.num_nodes), dtype=np.float32)
+        adj = np.zeros((num_nodes, num_nodes), dtype=np.float32)
         
         k_half = self.k // 2
         
-        for i in range(self.num_nodes):
+        for i in range(num_nodes):
             # Connect to k neighbors (k/2 on each side)
             for offset in range(-k_half, k_half + 1):
                 j = i + offset
-                if 0 <= j < self.num_nodes and i != j:
+                if 0 <= j < num_nodes and i != j:
                     adj[i, j] = 1.0
-        
-        # Normalize by degree (symmetrically)
-        degree = np.sum(adj, axis=1)
-        degree[degree == 0] = 1  # Avoid division by zero
-        degree_inv_sqrt = np.power(degree, -0.5)
-        
-        # D^{-1/2} A D^{-1/2} (symmetric normalization)
-        adj_normalized = adj * degree_inv_sqrt[:, None] * degree_inv_sqrt[None, :]
-        
-        return adj_normalized  # Return numpy array
-    
-    def call(self, x):
-        """
-        Args:
             x: Input features [batch, num_nodes, d_model]
         Returns:
             x: Same features (pass-through)
