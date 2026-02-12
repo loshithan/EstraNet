@@ -16,6 +16,7 @@ import data_utils
 import data_utils_ches20
 from transformer import Transformer
 from mamba_transformer import MambaNet
+from gnn_estranet import GNNEstraNet
 import evaluation_utils
 import evaluation_utils_ches20
 import pickle
@@ -103,7 +104,7 @@ flags.DEFINE_string("head_initialization", default='forward',
 flags.DEFINE_bool("softmax_attn", default='True',
       help="Whether to use softmax attention instead of global pooling")
 flags.DEFINE_string("model_type", default='transformer',
-      help="Model architecture: 'transformer' or 'mamba'")
+      help="Model architecture: 'transformer', 'mamba', or 'gnn'")
 
 # Evaluation config
 flags.DEFINE_integer("max_eval_batch", default=-1,
@@ -142,7 +143,26 @@ class LRSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
 
 def create_model(n_classes):
-    if FLAGS.model_type == 'mamba':
+    if FLAGS.model_type == 'gnn':
+        # GNN model - lightweight graph neural network
+        model = GNNEstraNet(
+            n_gcn_layers = 2,  # GNN-specific: number of graph conv layers
+            d_model = FLAGS.d_model,
+            k_neighbors = 5,  # GNN-specific: temporal graph connectivity
+            graph_pooling = 'mean',  # GNN-specific: pooling method
+            d_head_softmax = FLAGS.d_head_softmax,
+            n_head_softmax = FLAGS.n_head_softmax,
+            dropout = FLAGS.dropout,
+            n_classes = n_classes,
+            conv_kernel_size = FLAGS.conv_kernel_size,
+            n_conv_layer = FLAGS.n_conv_layer,
+            pool_size = FLAGS.pool_size,
+            beta_hat_2 = FLAGS.beta_hat_2,
+            model_normalization = FLAGS.model_normalization,
+            softmax_attn = FLAGS.softmax_attn,
+            output_attn = FLAGS.output_attn
+        )
+    elif FLAGS.model_type == 'mamba':
         # Mamba model doesn't use some Transformer-specific params
         model = MambaNet(
             n_layer = FLAGS.n_layer,

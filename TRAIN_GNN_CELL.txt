@@ -1,22 +1,21 @@
 # ============================================================================
-# MAMBA MODEL TRAINING (Add this as a new cell in your Colab notebook)
+# TRAIN GNN MODEL IN COLAB
 # ============================================================================
+# Paste this into a new Colab cell
 
-# Copy this entire cell into your Colab notebook
-
-print("🔵 Training Mamba Model")
+print("🔷 Training GNN Model")
 print("="*70)
 
 # Configuration
 CONFIG = {
-    'checkpoint_dir': '/content/drive/MyDrive/EstraNet/checkpoints_mamba',
-    'result_path': 'results/mamba',
-    'train_steps': 50000,           # Same as Transformer
+    'checkpoint_dir': '/content/drive/MyDrive/EstraNet/checkpoints_gnn',
+    'result_path': 'results/gnn',
+    'train_steps': 50000,
     'save_steps': 5000,
     'train_batch_size': 256,
     'eval_batch_size': 32,
     'learning_rate': 0.00025,
-    'model_type': 'mamba',          # KEY: Use Mamba instead of Transformer
+    'model_type': 'gnn',  # KEY: Use GNN
 }
 
 import os
@@ -56,8 +55,9 @@ python train_trans.py \\
     --result_path={CONFIG['result_path']}
 """
 
-print("Starting Mamba training...")
-print(f"Checkpoints will be saved to: {CONFIG['checkpoint_dir']}")
-print(f"Training for {CONFIG['train_steps']:,} steps\n")
+print("Starting GNN training...")
+print(f"Model: GNN (211,876 parameters - 51% less than Transformer)")
+print(f"Checkpoints: {CONFIG['checkpoint_dir']}")
+print(f"Training steps: {CONFIG['train_steps']:,}\n")
 
 !{train_cmd}
