@@ -142,7 +142,9 @@ class GNNEstraNet(tf.keras.Model):
         # --- Classifier ---
         logits = self.fc(graph_repr)
         
-        return logits
+        # Return as tuple to match Transformer's interface
+        # Training script expects: logits, ... = model(...)[0]
+        return (logits,)
     
     def get_config(self):
         return {
