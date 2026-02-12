@@ -101,10 +101,11 @@ class GNNEstraNet(tf.keras.Model):
         # --- Classifier ---
         self.fc = tf.keras.layers.Dense(n_classes, name='classifier')
     
-    def call(self, inputs, training=False):
+    def call(self, inputs, softmax_attn_smoothing=None, training=False):
         """
         Args:
             inputs: Power traces [batch, seq_len] or [batch, seq_len, 1]
+            softmax_attn_smoothing: Unused (for compatibility with training script)
             training: Boolean for dropout
         Returns:
             logits [batch, n_classes]
