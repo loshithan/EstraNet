@@ -4,7 +4,7 @@ Lightweight graph neural network architecture targeting <400K parameters
 """
 
 import tensorflow as tf
-from gnn-scripts.gnn_layers import GraphConvLayer, TemporalGraphBuilder, GlobalGraphPooling
+from gnn_layers import GraphConvLayer, TemporalGraphBuilder, GlobalGraphPooling
 
 
 class GNNEstraNet(tf.keras.Model):
