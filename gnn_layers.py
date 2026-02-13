@@ -116,6 +116,7 @@ class TemporalGraphBuilder(tf.keras.layers.Layer):
         self.num_nodes = input_shape[1]
         
         # Initialize with current shape
+        print(f"✅ GNN Graph Construction: {self.num_nodes} nodes (from Input Length {input_shape[1]})")
         adj_numpy = self._build_adjacency_matrix(self.num_nodes)
         
         # Make adjacency a non-trainable weight
