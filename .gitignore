@@ -31,13 +31,13 @@ env.bak/
 venv.bak/
 
 # Project Specific
-data/
-*.h5
-*.pth
-*.onnx
-*.tflite
-model/
-!model/.gitkeep
+# data/
+# *.h5
+# *.pth
+# *.onnx
+# *.tflite
+# model/
+# !model/.gitkeep
 
 # IDEs
 .vscode/

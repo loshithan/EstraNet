@@ -23,7 +23,7 @@ config = {
     'n_classes': 256,
     'conv_kernel_size': 3,
     'n_conv_layer': 2,
-    'pool_size': 20,
+    'pool_size': 2,
     'beta_hat_2': 150,
     'model_normalization': 'preLC',
     'softmax_attn': True,
@@ -39,8 +39,8 @@ model = GNNEstraNet(**config)
 
 # Build the model with dummy input
 print("\n🔨 Building model graph with dummy input...")
-dummy_input = tf.zeros((1, 10000))
-output = model(dummy_input, training=False)
+dummy_input = tf.zeros((1, 700))
+output = model(dummy_input, training=False)[0]
 
 print(f"✅ Model built successfully!")
 print(f"   Input shape:  {dummy_input.shape}")
@@ -64,8 +64,8 @@ else:
 
 # Test forward pass with random data
 print(f"\n🧪 Testing forward pass with random data...")
-test_input = tf.random.normal((4, 10000))
-test_output = model(test_input, training=True)
+test_input = tf.random.normal((4, 700))
+test_output = model(test_input, training=True)[0]
 print(f"   Batch input shape:  {test_input.shape}")
 print(f"   Batch output shape: {test_output.shape}")
 print(f"   ✅ Forward pass successful!")
