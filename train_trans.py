@@ -509,9 +509,19 @@ def main(unused_argv):
     tf.compat.v1.logging.info("Number of accelerators: %s" % strategy.num_replicas_in_sync)
 
     if FLAGS.dataset == 'ASCAD':
-        chk_name = 'trans_long'
+        if FLAGS.model_type == 'gnn':
+            chk_name = 'gnn_ASCAD'
+        elif FLAGS.model_type == 'mamba':
+            chk_name = 'mamba_ASCAD'
+        else:
+            chk_name = 'trans_long'
     elif FLAGS.dataset == 'CHES20':
-        chk_name = 'trans_long'
+        if FLAGS.model_type == 'gnn':
+            chk_name = 'gnn_CHES20'
+        elif FLAGS.model_type == 'mamba':
+            chk_name = 'mamba_CHES20'
+        else:
+            chk_name = 'trans_long'
     else:
         assert False
 
