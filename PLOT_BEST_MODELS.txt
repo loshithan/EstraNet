@@ -1,0 +1,9 @@
+# ============================================================================
+# PLOT RANK PROGRESSION (Best Candidates)
+# ============================================================================
+# Run this to create the graph for your top 4 models.
+# Make sure to replace PATH_TO_ARCHIVE with actual folder paths.
+
+python evaluate_rank_progression.py --checkpoints "checkpoints/gnn_checkpoints_archive2/gnn_ASCAD-5.index" "checkpoints/gnn_checkpoints_archive2/gnn_ASCAD-7.index" "checkpoints/gnn_checkpoints_archive2/gnn_ASCAD-10.index" "checkpoints/gnn_checkpoints_archive2/gnn_ASCAD-3.index" --input_length 700 --pool_size 2 --max_traces 2000 --step_size 50
+
+# Output: rank_progression_0.png
