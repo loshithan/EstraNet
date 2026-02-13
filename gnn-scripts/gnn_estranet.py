@@ -4,7 +4,7 @@ Lightweight graph neural network architecture targeting <400K parameters
 """
 
 import tensorflow as tf
-from gnn_layers import GraphConvLayer, TemporalGraphBuilder, GlobalGraphPooling
+from gnn_layers import GraphConvLayer, TemporalGraphBuilder, GlobalGraphPooling, AttentionPoolingLayer
 
 
 class GNNEstraNet(tf.keras.Model):
@@ -13,23 +13,23 @@ class GNNEstraNet(tf.keras.Model):
     Architecture:
         1. Conv1D preprocessing (local feature extraction)
         2. Temporal graph construction
-        3. GCN layers (message passing)
-        4. Global pooling
-        5. Softmax attention head
+        3. GCN layers (message passing) - DEEP (4 layers)
+        4. Attention pooling (weighted sum)
+        5. Classifier head
     """
     
     def __init__(self,
-                 n_gcn_layers=2,
+                 n_gcn_layers=4,    # UPGRADED: Deeper (was 2)
                  d_model=128,
-                 k_neighbors=5,
-                 graph_pooling='mean',
+                 k_neighbors=15,    # UPGRADED: Wider context (was 5)
+                 graph_pooling='attention', # UPGRADED: Attention (was mean)
                  d_head_softmax=16,
                  n_head_softmax=8,
                  dropout=0.1,
                  n_classes=256,
                  conv_kernel_size=3,
                  n_conv_layer=2,
-                 pool_size=2,  # CHANGED: Default to 2 for better granularity (was 20)
+                 pool_size=2,
                  beta_hat_2=100,
                  model_normalization='preLC',
                  softmax_attn=True,
@@ -91,7 +91,10 @@ class GNNEstraNet(tf.keras.Model):
             self.gcn_layers.append(gcn)
         
         # --- Global pooling ---
-        self.global_pool = GlobalGraphPooling(pooling=graph_pooling)
+        if graph_pooling == 'attention':
+             self.global_pool = AttentionPoolingLayer(name='attn_pool')
+        else:
+             self.global_pool = GlobalGraphPooling(pooling=graph_pooling)
         
         # --- Output head: Simple MLP ---
         # Simpler than Transformer's complex attention - keeps params low

@@ -172,7 +172,7 @@ class TemporalGraphBuilder(tf.keras.layers.Layer):
 class GlobalGraphPooling(tf.keras.layers.Layer):
     """
     Pools node features to create fixed-size graph representation.
-    Supports mean and max pooling.
+    Supports mean, max, and sum pooling.
     """
     
     def __init__(self, pooling='mean', **kwargs):
@@ -199,3 +199,46 @@ class GlobalGraphPooling(tf.keras.layers.Layer):
         config = super(GlobalGraphPooling, self).get_config()
         config.update({'pooling': self.pooling})
         return config
+
+class AttentionPoolingLayer(tf.keras.layers.Layer):
+    """
+    Learns to weight nodes by importance before pooling.
+    Crucial for Side-Channel Analysis to focus on leakage points.
+    Formula: alpha = softmax(W * x + b), output = sum(alpha * x)
+    """
+    def __init__(self, **kwargs):
+        super(AttentionPoolingLayer, self).__init__(**kwargs)
+        
+    def build(self, input_shape):
+        self.d_model = input_shape[-1]
+        
+        # Attention score weights
+        self.w_att = self.add_weight(
+            name='w_att',
+            shape=(self.d_model, 1),
+            initializer='glorot_uniform',
+            trainable=True
+        )
+        self.b_att = self.add_weight(
+            name='b_att',
+            shape=(1,),
+            initializer='zeros',
+            trainable=True
+        )
+        super(AttentionPoolingLayer, self).build(input_shape)
+        
+    def call(self, x):
+        # x: [batch, nodes, d_model]
+        
+        # Calculate attention scores: [batch, nodes, 1]
+        scores = tf.matmul(x, self.w_att) + self.b_att
+        
+        # Normalize scores to probabilities
+        alphas = tf.nn.softmax(scores, axis=1)
+        
+        # Weighted sum: [batch, d_model]
+        # (broadcast alphas to [batch, nodes, d_model])
+        weighted_x = x * alphas
+        output = tf.reduce_sum(weighted_x, axis=1)
+        
+        return output

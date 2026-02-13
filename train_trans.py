@@ -110,6 +110,12 @@ flags.DEFINE_integer("n_conv_layer", default=1,
       help="Number of convolutional blocks")
 flags.DEFINE_integer("pool_size", default=2,
       help="Pooling size of the average pooling layers")
+flags.DEFINE_integer("n_gcn_layers", default=4,
+      help="Number of GNN layers")
+flags.DEFINE_integer("k_neighbors", default=15,
+      help="Number of temporal neighbors for GNN")
+flags.DEFINE_string("graph_pooling", default='attention',
+      help="Graph pooling method: 'mean', 'max', 'sum', 'attention'")
 flags.DEFINE_string("model_normalization", default='preLC',
       help="Normalization type used to normalize layer, can be in ['preLC', 'postLC', 'none']")
 flags.DEFINE_string("head_initialization", default='forward',
@@ -159,10 +165,10 @@ def create_model(n_classes):
     if FLAGS.model_type == 'gnn':
         # GNN model - lightweight graph neural network
         model = GNNEstraNet(
-            n_gcn_layers = 2,  # GNN-specific: number of graph conv layers
+            n_gcn_layers = FLAGS.n_gcn_layers,  # GNN-specific: number of graph conv layers
             d_model = FLAGS.d_model,
-            k_neighbors = 5,  # GNN-specific: temporal graph connectivity
-            graph_pooling = 'mean',  # GNN-specific: pooling method
+            k_neighbors = FLAGS.k_neighbors,  # GNN-specific: temporal graph connectivity
+            graph_pooling = FLAGS.graph_pooling,  # GNN-specific: pooling method
             d_head_softmax = FLAGS.d_head_softmax,
             n_head_softmax = FLAGS.n_head_softmax,
             dropout = FLAGS.dropout,
