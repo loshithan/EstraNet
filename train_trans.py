@@ -14,10 +14,23 @@ import absl.logging as _logging  # pylint: disable=unused-import
 import tensorflow as tf
 import data_utils
 import data_utils_ches20
+import sys
+sys.path.append('mamba-scripts')
+sys.path.append('gnn-scripts')
+
 from transformer import Transformer
-from mamba_transformer import MambaNet
-from gnn_estranet import GNNEstraNet
-import evaluation_utils
+try:
+    from mamba_scripts.mamba_transformer import MambaNet
+except ImportError:
+    try:
+        from mamba_transformer import MambaNet
+    except ImportError:
+        MambaNet = None
+
+try:
+    from gnn_estranet import GNNEstraNet
+except ImportError:
+    from gnn_scripts.gnn_estranet import GNNEstraNet
 import evaluation_utils_ches20
 import pickle
 
