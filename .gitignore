@@ -49,3 +49,5 @@ Thumbs.db
 
 #checkpoints
 checkpoints/
+
+ATMega8515_raw_traces.h5

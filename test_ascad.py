@@ -23,9 +23,12 @@ except ImportError as e:
 class Config:
     # Data params
     DATA_PATH = "data/ASCAD.h5"     # Path to ASCAD.h5 file
-    CHECKPOINT_DIR = "checkpoints/"           # Path where checkpoint files are (e.g. ./trans_long-1)
+    CHECKPOINT_DIR = "checkpoints/"           # Path where checkpoint files are
+    CHECKPOINT_FILE = "trans_long-11"          # Specific checkpoint prefix (e.g. trans_long-8)
     
     # Model Architecture (Must match train_trans.py exactly)
+    # NOTE: These values (e.g. N_HEAD=8) match the 'trans_long-11' checkpoint
+    # and override the defaults found in train_trans.py (which uses n_head=4).
     N_LAYER = 2
     D_MODEL = 128
     D_HEAD = 32
@@ -46,7 +49,9 @@ class Config:
     OUTPUT_ATTN = False
 
     # Inference params
-    INPUT_LENGTH = 10000
+    # NOTE: INPUT_LENGTH=700 matches the 'input_length' flag in train_trans.py
+    INPUT_LENGTH = 700  # Number of samples per trace
+    NUM_TEST_TRACES = 10000 # Number of traces to test (Set to None for all)
     DATA_DESYNC = 0     # 0 for testing
     BATCH_SIZE = 50     # Adjust based on GPU memory
 
@@ -118,8 +123,18 @@ def load_weights(model):
     # Create checkpoint object pointing to our model
     checkpoint = tf.train.Checkpoint(model=model)
     
-    # Try 1: Standard latest_checkpoint (requires 'checkpoint' file)
-    chk_path = tf.train.latest_checkpoint(CONFIG.CHECKPOINT_DIR)
+    # Try 1: Check if specific checkpoint file is defined
+    chk_path = None
+    if hasattr(CONFIG, 'CHECKPOINT_FILE') and CONFIG.CHECKPOINT_FILE:
+        candidate = os.path.join(CONFIG.CHECKPOINT_DIR, CONFIG.CHECKPOINT_FILE)
+        # Verify it exists (check for .index or .data file)
+        if os.path.exists(candidate + ".index") or os.path.exists(candidate + ".data-00000-of-00001"):
+            chk_path = candidate
+            print(f"🎯 Using specific checkpoint: {chk_path}")
+
+    # Try 2: Standard latest_checkpoint (requires 'checkpoint' file)
+    if not chk_path:
+        chk_path = tf.train.latest_checkpoint(CONFIG.CHECKPOINT_DIR)
     
     # Try 2: Manual search for prefix
     if not chk_path:
@@ -161,6 +176,14 @@ def run_inference(model, test_data):
     
     all_predictions = []
     num_batches = test_data.num_samples // CONFIG.BATCH_SIZE
+    
+    # Limit number of batches if configured
+    if hasattr(CONFIG, 'NUM_TEST_TRACES') and CONFIG.NUM_TEST_TRACES is not None:
+        max_batches = CONFIG.NUM_TEST_TRACES // CONFIG.BATCH_SIZE
+        num_batches = min(num_batches, max_batches)
+        tf_dataset = tf_dataset.take(num_batches)
+        print(f"📉 Limiting inference to {CONFIG.NUM_TEST_TRACES} traces ({num_batches} batches).")
+
     progbar = tf.keras.utils.Progbar(num_batches)
     
     for i, (batch_traces, batch_labels) in enumerate(tf_dataset):

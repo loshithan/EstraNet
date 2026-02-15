@@ -1,5 +1,5 @@
 # ============================================================================
-# MASS EVALUATE CHECKPOINTS (GNN)
+# MASS EVALUATE CHECKPOINTS (GNN - V2 Supported)
 # ============================================================================
 # Evaluates ALL checkpoints in given directories.
 # Usage: python evaluate_all_checkpoints.py --checkpoint_dirs "dir1" "dir2" ...
@@ -39,16 +39,19 @@ def load_ascad(n_traces=2000, start_index=0, input_length=700):
         keys = metadata['key'][:, 2].astype(np.uint8)
     return traces, plaintexts, keys
 
-def build_model(input_length, pool_size=2):
-    print(f"🏗️ Building GNN model (Pool={pool_size})...")
+def build_model(args):
+    print(f"🏗️ Building GNN model (L={args.n_gcn_layers}, K={args.k_neighbors}, Pool={args.graph_pooling})...")
     model = GNNEstraNet(
-        n_gcn_layers=2, d_model=128, k_neighbors=5, graph_pooling='mean',
+        n_gcn_layers=args.n_gcn_layers, 
+        d_model=128, 
+        k_neighbors=args.k_neighbors, 
+        graph_pooling=args.graph_pooling,
         d_head_softmax=16, n_head_softmax=8, dropout=0.05, n_classes=256,
-        conv_kernel_size=3, n_conv_layer=2, pool_size=pool_size,
+        conv_kernel_size=3, n_conv_layer=2, pool_size=args.pool_size,
         beta_hat_2=150, model_normalization='preLC', softmax_attn=True, output_attn=False
     )
     # Dummy build
-    _ = model(tf.zeros((1, input_length)), training=False)
+    _ = model(tf.zeros((1, args.input_length)), training=False)
     return model
 
 def evaluate_all(args):
@@ -56,7 +59,7 @@ def evaluate_all(args):
     traces, plaintexts, keys = load_ascad(n_traces=args.max_traces, start_index=args.start_index, input_length=args.input_length)
     
     # 2. Build Model (Once)
-    model = build_model(args.input_length, args.pool_size)
+    model = build_model(args)
     ckpt = tf.train.Checkpoint(model=model)
 
     # 3. Find Checkpoints
@@ -141,7 +144,7 @@ def evaluate_all(args):
         print(df.to_string(index=False))
         
         # Save to CSV
-        csv_filename = f"evaluation_results_{args.start_index}.csv"
+        csv_filename = f"evaluation_results_{args.graph_pooling}_{args.start_index}.csv"
         df.to_csv(csv_filename, index=False)
         print(f"\n✅ Results saved to {csv_filename}")
 
@@ -153,6 +156,11 @@ if __name__ == "__main__":
     parser.add_argument("--max_traces", type=int, default=2000)
     parser.add_argument("--start_index", type=int, default=0, help="Trace index to start loading from")
     parser.add_argument("--batch_size", type=int, default=256)
+    
+    # NEW ARGUMENTS FOR V2 GNN
+    parser.add_argument("--n_gcn_layers", type=int, default=2, help="Number of GNN layers")
+    parser.add_argument("--k_neighbors", type=int, default=5, help="Number of neighbors")
+    parser.add_argument("--graph_pooling", type=str, default='mean', help="Pooling method")
     
     args = parser.parse_args()
     evaluate_all(args)
