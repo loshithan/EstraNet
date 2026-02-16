@@ -22,9 +22,9 @@ except ImportError as e:
 # ==========================================
 class Config:
     # Data params
-    DATA_PATH = "data/ASCAD.h5"     # Path to ASCAD.h5 file
-    CHECKPOINT_DIR = "checkpoints/"           # Path where checkpoint files are
-    CHECKPOINT_FILE = "trans_long-11"          # Specific checkpoint prefix (e.g. trans_long-8)
+    DATA_PATH = "data/ASCAD_desync50.h5"     # Path to ASCAD.h5 file
+    CHECKPOINT_DIR = "checkpoints/checkpoints_transformer/"           # Path where checkpoint files are
+    CHECKPOINT_FILE = "trans_long-6"          # Specific checkpoint prefix (e.g. trans_long-8)
     
     # Model Architecture (Must match train_trans.py exactly)
     # NOTE: These values (e.g. N_HEAD=8) match the 'trans_long-11' checkpoint

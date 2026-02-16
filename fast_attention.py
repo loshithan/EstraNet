@@ -222,12 +222,12 @@ class SelfAttention(tf.keras.layers.Layer):
 
 
 
-print("✅ File replaced with fixed version")
+print("File replaced with fixed version")
 
 # Delete all checkpoints and cache
 # !rm -rf /content/EstraNet/trans_long-* /content/EstraNet/checkpoint* /content/EstraNet/*.index /content/EstraNet/*.data-*
 # !find /content/EstraNet -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
-print("✅ Checkpoints deleted")
-print("\n⚠️  NOW RESTART RUNTIME: Runtime → Restart runtime")
+print("Checkpoints deleted")
+print("NOW RESTART RUNTIME: Runtime -> Restart runtime")
 print("Then run your training again")
