@@ -1,0 +1,6 @@
+--- Comparison (10,000 Traces) ---
+Metric              | GNN-10         | EstraNet (Base)
+--------------------|----------------|----------------
+Final Key Rank      | 131.00         | 13.00         
+Average Key Rank    | 43.87          | 50.63         
+Traces to Rank 0    | N/A            | N/A           

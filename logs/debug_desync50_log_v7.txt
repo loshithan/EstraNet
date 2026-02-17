@@ -1,0 +1,93 @@
+2026-02-17 18:27:42.466860: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-02-17 18:27:43.559278: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+Starting evaluation script...
+Script initialization complete. Calling main...
+Entered run_comparison
+Checking data: data/ASCAD_desync50.h5
+Data found. Starting Mamba eval...
+
+[Mamba-GNN] Evaluating on data/ASCAD_desync50.h5...
+[Mamba-GNN] Imported OptimizedMambaGNN
+[Mamba-GNN] Using device: cpu
+[Mamba-GNN] Fitting Scaler on profiling data...
+[Mamba-GNN] Transforming attack traces...
+Optimized Mamba-GNN:
+  d_model: 192, Mamba layers: 4, GNN layers: 3
+  Input scaling: 0.1
+[Mamba-GNN] Loading checkpoint: model/final_model_conservative.pth
+Mamba eval failed: [Errno 2] No such file or directory: 'model/final_model_conservative.pth'
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\estranet transformer\EstraNet\evaluate_desync50_comparison.py", line 268, in run_comparison
+    rank_mamba = evaluate_mamba_gnn(desync50_data, mamba_ckpt)
+  File "C:\Users\User\Desktop\estranet transformer\EstraNet\evaluate_desync50_comparison.py", line 69, in evaluate_mamba_gnn
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False) # weights_only=False for older PyTorch versions/safe loading
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\torch\serialization.py", line 1484, in load
+    with _open_file_like(f, "rb") as opened_file:
+         ~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\torch\serialization.py", line 759, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\torch\serialization.py", line 740, in __init__
+    super().__init__(open(name, mode))
+                     ~~~~^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'model/final_model_conservative.pth'
+Starting Transformer eval...
+
+[Transformer] Evaluating on data/ASCAD_desync50.h5...
+File replaced with fixed version
+Checkpoints deleted
+NOW RESTART RUNTIME: Runtime -> Restart runtime
+Then run your training again
+WARNING:tensorflow:From C:\Users\User\AppData\Roaming\Python\Python313\site-packages\keras\src\backend\common\global_state.py:82: The name tf.reset_default_graph is deprecated. Please use tf.compat.v1.reset_default_graph instead.
+
+2026-02-17 18:27:44.866214: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[Transformer] Restoring from checkpoints/checkpoints_transformer_desync50\trans_long-5
+[Transformer] Checkpoint restored.
+[Transformer] Running Inference...
+
+[1m 1/40[0m [37m====================[0m [1m2:52[0m 4s/step
+[1m 2/40[0m [32m=[0m[37m===================[0m [1m1:08[0m 2s/step
+[1m 3/40[0m [32m=[0m[37m===================[0m [1m1:08[0m 2s/step
+[1m 4/40[0m [32m==[0m[37m==================[0m [1m1:06[0m 2s/step
+[1m 5/40[0m [32m==[0m[37m==================[0m [1m1:04[0m 2s/step
+[1m 6/40[0m [32m===[0m[37m=================[0m [1m1:02[0m 2s/step
+[1m 7/40[0m [32m===[0m[37m=================[0m [1m1:00[0m 2s/step
+[1m 8/40[0m [32m====[0m[37m================[0m [1m59s[0m 2s/step 
+[1m 9/40[0m [32m====[0m[37m================[0m [1m57s[0m 2s/step
+[1m10/40[0m [32m=====[0m[37m===============[0m [1m55s[0m 2s/step
+[1m11/40[0m [32m=====[0m[37m===============[0m [1m53s[0m 2s/step
+[1m12/40[0m [32m======[0m[37m==============[0m [1m51s[0m 2s/step
+[1m13/40[0m [32m======[0m[37m==============[0m [1m49s[0m 2s/step
+[1m14/40[0m [32m=======[0m[37m=============[0m [1m47s[0m 2s/step
+[1m15/40[0m [32m=======[0m[37m=============[0m [1m45s[0m 2s/step
+[1m16/40[0m [32m========[0m[37m============[0m [1m44s[0m 2s/step
+[1m17/40[0m [32m========[0m[37m============[0m [1m42s[0m 2s/step
+[1m18/40[0m [32m=========[0m[37m===========[0m [1m40s[0m 2s/step
+[1m19/40[0m [32m=========[0m[37m===========[0m [1m38s[0m 2s/step
+[1m20/40[0m [32m==========[0m[37m==========[0m [1m36s[0m 2s/step
+[1m21/40[0m [32m==========[0m[37m==========[0m [1m34s[0m 2s/step
+[1m22/40[0m [32m===========[0m[37m=========[0m [1m33s[0m 2s/step
+[1m23/40[0m [32m===========[0m[37m=========[0m [1m31s[0m 2s/step
+[1m24/40[0m [32m============[0m[37m========[0m [1m29s[0m 2s/step
+[1m25/40[0m [32m============[0m[37m========[0m [1m27s[0m 2s/step
+[1m26/40[0m [32m=============[0m[37m=======[0m [1m25s[0m 2s/step
+[1m27/40[0m [32m=============[0m[37m=======[0m [1m23s[0m 2s/step
+[1m28/40[0m [32m==============[0m[37m======[0m [1m22s[0m 2s/step
+[1m29/40[0m [32m==============[0m[37m======[0m [1m20s[0m 2s/step
+[1m30/40[0m [32m===============[0m[37m=====[0m [1m18s[0m 2s/step
+[1m31/40[0m [32m===============[0m[37m=====[0m [1m16s[0m 2s/step
+[1m32/40[0m [32m================[0m[37m====[0m [1m14s[0m 2s/step
+[1m33/40[0m [32m================[0m[37m====[0m [1m12s[0m 2s/step
+[1m34/40[0m [32m=================[0m[37m===[0m [1m11s[0m 2s/step
+[1m35/40[0m [32m=================[0m[37m===[0m [1m9s[0m 2s/step 
+[1m36/40[0m [32m==================[0m[37m==[0m [1m7s[0m 2s/step
+[1m37/40[0m [32m==================[0m[37m==[0m [1m5s[0m 2s/step
+[1m38/40[0m [32m===================[0m[37m=[0m [1m3s[0m 2s/step
+[1m39/40[0m [32m===================[0m[37m=[0m [1m1s[0m 2s/step
+[1m40/40[0m [32m====================[0m[37m[0m [1m0s[0m 2s/step
+[1m40/40[0m [32m====================[0m[37m[0m [1m76s[0m 2s/step
+[Transformer] Computing Rank...
+Transformer eval failed: name 'num_traces' is not defined
+C:\Users\User\Desktop\estranet transformer\EstraNet\evaluate_desync50_comparison.py:298: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  plt.legend()
+Comparison plot saved to desync50_comparison.png

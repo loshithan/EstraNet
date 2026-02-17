@@ -1,0 +1,105 @@
+2026-02-16 14:38:45.283788: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-02-16 14:38:46.753070: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-02-16 14:38:48.149357: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+File replaced with fixed version
+Checkpoints deleted
+NOW RESTART RUNTIME: Runtime -> Restart runtime
+Then run your training again
+Configuration:
+  Data: data/ASCAD_desync100.h5
+  Checkpoints: checkpoints/checkpoints_transformer_desync100_dataset
+  Input Length: 700
+Starting Transformer Checkpoint Evaluation...
+   Reading 2000 test traces...
+   Key appears FIXED.
+DEBUG: find_checkpoints pattern: checkpoints/checkpoints_transformer_desync100_dataset\trans_long-*.index
+DEBUG: find_checkpoints found 21 files.
+Found 21 checkpoints: ['trans_long-1', 'trans_long-2', 'trans_long-3', 'trans_long-4', 'trans_long-5', 'trans_long-6', 'trans_long-7', 'trans_long-8', 'trans_long-9', 'trans_long-10', 'trans_long-11', 'trans_long-12', 'trans_long-13', 'trans_long-14', 'trans_long-15', 'trans_long-16', 'trans_long-17', 'trans_long-18', 'trans_long-19', 'trans_long-20', 'trans_long-21']
+
+Evaluating trans_long-1...
+   Weights restored.
+   Final Rank (at 2000 traces): 249
+
+Evaluating trans_long-2...
+   Weights restored.
+   Final Rank (at 2000 traces): 186
+
+Evaluating trans_long-3...
+   Weights restored.
+   Final Rank (at 2000 traces): 236
+
+Evaluating trans_long-4...
+   Weights restored.
+   Final Rank (at 2000 traces): 223
+
+Evaluating trans_long-5...
+   Weights restored.
+   Final Rank (at 2000 traces): 230
+
+Evaluating trans_long-6...
+   Weights restored.
+   Final Rank (at 2000 traces): 238
+
+Evaluating trans_long-7...
+   Weights restored.
+   Final Rank (at 2000 traces): 210
+
+Evaluating trans_long-8...
+   Weights restored.
+   Final Rank (at 2000 traces): 207
+
+Evaluating trans_long-9...
+   Weights restored.
+   Final Rank (at 2000 traces): 210
+
+Evaluating trans_long-10...
+   Weights restored.
+   Final Rank (at 2000 traces): 216
+
+Evaluating trans_long-11...
+   Weights restored.
+   Final Rank (at 2000 traces): 192
+
+Evaluating trans_long-12...
+   Weights restored.
+   Final Rank (at 2000 traces): 192
+
+Evaluating trans_long-13...
+   Weights restored.
+   Final Rank (at 2000 traces): 156
+
+Evaluating trans_long-14...
+   Weights restored.
+   Final Rank (at 2000 traces): 159
+
+Evaluating trans_long-15...
+   Weights restored.
+   Final Rank (at 2000 traces): 142
+
+Evaluating trans_long-16...
+   Weights restored.
+   Final Rank (at 2000 traces): 135
+
+Evaluating trans_long-17...
+   Weights restored.
+   Final Rank (at 2000 traces): 134
+
+Evaluating trans_long-18...
+   Weights restored.
+   Final Rank (at 2000 traces): 127
+
+Evaluating trans_long-19...
+   Weights restored.
+   Final Rank (at 2000 traces): 123
+
+Evaluating trans_long-20...
+   Weights restored.
+   Final Rank (at 2000 traces): 121
+
+Evaluating trans_long-21...
+   Weights restored.
+   Final Rank (at 2000 traces): 120
+
+Saved results to transformer_evaluation_results.csv
+Saved plot to transformer_checkpoint_comparison.png

@@ -1,0 +1,138 @@
+2026-02-17 18:23:45.592903: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-02-17 18:23:46.737400: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+Starting evaluation script...
+Script initialization complete. Calling main...
+Entered run_comparison
+Checking data: data/ASCAD_desync50.h5
+Data found. Starting Mamba eval...
+
+[Mamba-GNN] Evaluating on data/ASCAD_desync50.h5...
+[Mamba-GNN] Imported OptimizedMambaGNN
+[Mamba-GNN] Using device: cpu
+[Mamba-GNN] Fitting Scaler on profiling data...
+[Mamba-GNN] Transforming attack traces...
+Mamba eval failed: OptimizedMambaGNN.__init__() got an unexpected keyword argument 'd_state'
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\estranet transformer\EstraNet\evaluate_desync50_comparison.py", line 259, in run_comparison
+    rank_mamba = evaluate_mamba_gnn(desync50_data, mamba_ckpt)
+  File "C:\Users\User\Desktop\estranet transformer\EstraNet\evaluate_desync50_comparison.py", line 56, in evaluate_mamba_gnn
+    model = OptimizedMambaGNN(
+            ~~~~~~~~~~~~~~~~~^
+        d_model=192,
+        ^^^^^^^^^^^^
+    ...<6 lines>...
+        num_classes=256
+        ^^^^^^^^^^^^^^^
+    ).to(device)
+    ^
+TypeError: OptimizedMambaGNN.__init__() got an unexpected keyword argument 'd_state'
+Starting Transformer eval...
+
+[Transformer] Evaluating on data/ASCAD_desync50.h5...
+File replaced with fixed version
+Checkpoints deleted
+NOW RESTART RUNTIME: Runtime -> Restart runtime
+Then run your training again
+WARNING:tensorflow:From C:\Users\User\AppData\Roaming\Python\Python313\site-packages\keras\src\backend\common\global_state.py:82: The name tf.reset_default_graph is deprecated. Please use tf.compat.v1.reset_default_graph instead.
+
+2026-02-17 18:23:48.233554: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[Transformer] Restoring from checkpoints/checkpoints_transformer_desync50\trans_long-5
+[Transformer] Error restoring checkpoint: Received incompatible tensor with shape (16, 8) when attempting to restore variable with shape (32, 4) and name softmax_attention/q_heads:0.
+WARNING:tensorflow:Detecting that an object or model or tf.train.Checkpoint is being deleted with unrestored values. See the following logs for the specific values in question. To silence these warnings, use `status.expect_partial()`. See https://www.tensorflow.org/api_docs/python/tf/train/Checkpoint#restorefor details about the status object returned by the restore function.
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).save_counter
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.2
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.3
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.4
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.5
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.6
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.7
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.8
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.9
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.10
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.11
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.12
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.13
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.14
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.15
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.16
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.17
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.18
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.19
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.20
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.21
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.22
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.23
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.24
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.25
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.26
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.27
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.28
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.29
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.30
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.31
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.32
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.33
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.34
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.35
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.36
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.37
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.38
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.39
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.40
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.41
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.42
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.43
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.44
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.45
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.46
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.47
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.48
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.49
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.50
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.51
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.52
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.53
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.54
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.55
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.56
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.57
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.58
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.59
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.60
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.61
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._variables.62
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.0
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.1
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.2
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.3
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.4
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.5
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.6
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.7
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.8
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.9
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.10
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.11
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.12
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.13
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.14
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.15
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.16
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.17
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.18
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.19
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.20
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.21
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.22
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.23
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.24
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.25
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.26
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.27
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.28
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.29
+WARNING:tensorflow:Value in checkpoint could not be found in the restored object: (root).optimizer._trainable_variables.30
+C:\Users\User\Desktop\estranet transformer\EstraNet\evaluate_desync50_comparison.py:289: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  plt.legend()
+Comparison plot saved to desync50_comparison.png

@@ -1,0 +1,2 @@
+found 10 files: ['evaluation_results_attention_0.csv', 'evaluation_results_attention_2000.csv', 'evaluation_results_attention_4000.csv', 'evaluation_results_attention_6000.csv', 'evaluation_results_attention_8000.csv', 'evaluation_results_mean_0.csv', 'evaluation_results_mean_2000.csv', 'evaluation_results_mean_4000.csv', 'evaluation_results_mean_6000.csv', 'evaluation_results_mean_8000.csv']
+Plots will include 28 models.
