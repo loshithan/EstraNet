@@ -27,6 +27,43 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.mamba_gnn_model import OptimizedMambaGNN
 
+
+# =============================================================================
+# DATA AUGMENTATION
+# =============================================================================
+
+class AugmentedASCADDataset(Dataset):
+    """Dataset with data augmentation to prevent overfitting"""
+    def __init__(self, traces, labels, augment=True, noise_std=0.1, shift_max=5):
+        self.traces = traces
+        self.labels = torch.LongTensor(labels)
+        self.augment = augment
+        self.noise_std = noise_std
+        self.shift_max = shift_max
+
+    def __len__(self):
+        return len(self.traces)
+
+    def __getitem__(self, idx):
+        trace = self.traces[idx].copy()
+        
+        if self.augment and self.training_mode:
+            # Add Gaussian noise
+            trace = trace + np.random.normal(0, self.noise_std, trace.shape)
+            
+            # Random time shift
+            shift = np.random.randint(-self.shift_max, self.shift_max + 1)
+            if shift != 0:
+                trace = np.roll(trace, shift)
+        
+        return torch.FloatTensor(trace), self.labels[idx]
+    
+    def train(self):
+        self.training_mode = True
+    
+    def eval(self):
+        self.training_mode = False
+
 # AES S-box for label computation
 AES_SBOX = np.array([
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
@@ -233,8 +270,15 @@ def train(args):
         args.data_path, args.target_byte
     )
     
-    # Create dataloaders - MATCHED TO ESTRANET
-    train_dataset = ASCADDataset(X_train, y_train)
+    # Create dataloaders with augmentation for training
+    train_dataset = AugmentedASCADDataset(
+        X_train, y_train, 
+        augment=True,
+        noise_std=args.augment_noise,
+        shift_max=args.augment_shift
+    )
+    train_dataset.train()  # Enable augmentation
+    
     attack_dataset = ASCADDataset(X_attack, y_attack)
     
     train_loader = DataLoader(
@@ -267,10 +311,11 @@ def train(args):
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel Parameters: {total_params:,}")
     
-    # Optimizer - ADAM (not AdamW) to match EstraNet
-    optimizer = torch.optim.Adam(
+    # Optimizer - Adam with weight decay for regularization
+    optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=args.learning_rate  # Will be updated by scheduler
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay  # L2 regularization
     )
     
     # Learning rate scheduler - COSINE DECAY like EstraNet
@@ -281,8 +326,8 @@ def train(args):
         min_lr_ratio=args.min_lr_ratio
     )
     
-    # Loss function - CROSS ENTROPY (not Focal) to match EstraNet
-    criterion = nn.CrossEntropyLoss()
+    # Loss function with label smoothing for regularization
+    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     
     # Training metrics
     num_train_batch = len(train_loader)
@@ -296,6 +341,8 @@ def train(args):
     # Training statistics
     loss_history = {}
     global_step = 0
+    best_eval_loss = float('inf')
+    patience_counter = 0
     
     # Restore checkpoint if warm_start
     if args.warm_start:
@@ -393,10 +440,33 @@ def train(args):
                 eval_loss /= eval_batches
                 print(f"Eval  batches[{eval_batches:5d}]                | loss {eval_loss:>5.2f}")
                 
+                # Ensure history entry exists when eval runs before the regular log interval
+                loss_history.setdefault(global_step, {})
                 loss_history[global_step].update({
                     'train_eval_loss': train_eval_loss,
                     'eval_loss': eval_loss
                 })
+                
+                # Early stopping check
+                if eval_loss < best_eval_loss:
+                    best_eval_loss = eval_loss
+                    patience_counter = 0
+                    # Save best model
+                    best_path = os.path.join(args.checkpoint_dir, 'best_model.pth')
+                    torch.save({
+                        'global_step': global_step,
+                        'model_state_dict': model.state_dict(),
+                        'eval_loss': eval_loss
+                    }, best_path)
+                    print(f"★ New best model saved (eval_loss: {eval_loss:.2f})")
+                else:
+                    patience_counter += 1
+                    if args.early_stopping > 0 and patience_counter >= args.early_stopping:
+                        print(f"\n⚠ Early stopping triggered at step {global_step}")
+                        print(f"  Best eval loss: {best_eval_loss:.2f}")
+                        # Set flag to exit training
+                        global_step = args.train_steps
+                        break
                 
                 model.train()
             
@@ -596,6 +666,18 @@ def main():
                        help='K-neighbors for graph')
     parser.add_argument('--dropout', type=float, default=0.1,
                        help='Dropout rate (EstraNet: 0.1)')
+    
+    # Regularization config (NEW - to prevent overfitting)
+    parser.add_argument('--weight_decay', type=float, default=0.01,
+                       help='Weight decay for L2 regularization')
+    parser.add_argument('--label_smoothing', type=float, default=0.1,
+                       help='Label smoothing factor')
+    parser.add_argument('--early_stopping', type=int, default=10,
+                       help='Early stopping patience (eval periods). 0=disabled')
+    parser.add_argument('--augment_noise', type=float, default=0.1,
+                       help='Gaussian noise std for augmentation')
+    parser.add_argument('--augment_shift', type=int, default=5,
+                       help='Max random time shift for augmentation')
     
     # Checkpoint config
     parser.add_argument('--checkpoint_dir', type=str, required=True,

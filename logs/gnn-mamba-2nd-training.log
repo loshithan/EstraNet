@@ -1,0 +1,457 @@
+ ================================================================================
+Starting Mamba-GNN Training (EstraNet-Aligned Configuration)
+================================================================================
+
+✓ Command: python mamba-gnn-scripts/train_mamba_gnn.py     --data_path=data/ASCAD.h5     --checkpoint_dir=checkpoints/mamba_gnn_estranet     --target_byte=2     --train_batch_size=256     --eval_batch_size=32     --train_steps=100000     --learning_rate=0.00025     --d_model=128     --mamba_layers=4     --gnn_layers=3     --k_neighbors=8     --dropout=0.1     --do_train
+
+
+Monitoring training progress...
+
+
+================================================================================
+CONFIGURATION (EstraNet-aligned)
+================================================================================
+data_path:         data/ASCAD.h5
+target_byte:       2
+input_length:      700
+train_batch_size:  256
+eval_batch_size:   32
+train_steps:       100000
+learning_rate:     0.00025
+d_model:           128
+mamba_layers:      4
+gnn_layers:        3
+checkpoint_dir:    checkpoints/mamba_gnn_estranet
+================================================================================
+
+================================================================================
+MAMBA-GNN TRAINING (EstraNet-aligned configuration)
+================================================================================
+
+Device: cuda
+Loading ASCAD from: data/ASCAD.h5
+Training traces:  (50000, 700)
+Attack traces:    (10000, 700)
+Target byte:      2
+Optimized Mamba-GNN:
+  d_model: 128, Mamba layers: 4, GNN layers: 3
+  Input scaling: 0.1
+
+Model Parameters: 1,450,399
+Training batches per iteration: 196
+Total training steps: 100000
+Save checkpoints every: 10000 steps
+
+================================================================================
+Starting training...
+================================================================================
+
+[   500] | gnorm  1.12 lr  0.000125 | loss  5.58
+Train batches[  196]                | loss  5.54
+Eval  batches[  312]                | loss  5.56
+[  1000] | gnorm  0.64 lr  0.000250 | loss  5.55
+Train batches[  196]                | loss  5.52
+Eval  batches[  312]                | loss  5.56
+[  1500] | gnorm  1.05 lr  0.000250 | loss  5.52
+Train batches[  196]                | loss  5.48
+Eval  batches[  312]                | loss  5.58
+[  2000] | gnorm  2.10 lr  0.000250 | loss  5.47
+Train batches[  196]                | loss  5.35
+Eval  batches[  312]                | loss  5.65
+[  2500] | gnorm  2.94 lr  0.000250 | loss  5.35
+Train batches[  196]                | loss  5.15
+Eval  batches[  312]                | loss  5.68
+[  3000] | gnorm  4.57 lr  0.000250 | loss  5.17
+Train batches[  196]                | loss  4.92
+Eval  batches[  312]                | loss  5.76
+[  3500] | gnorm  5.58 lr  0.000250 | loss  4.95
+Train batches[  196]                | loss  4.59
+Eval  batches[  312]                | loss  5.85
+[  4000] | gnorm  7.27 lr  0.000249 | loss  4.68
+Train batches[  196]                | loss  4.16
+Eval  batches[  312]                | loss  6.04
+[  4500] | gnorm  9.01 lr  0.000249 | loss  4.40
+Train batches[  196]                | loss  3.77
+Eval  batches[  312]                | loss  6.28
+[  5000] | gnorm 10.96 lr  0.000249 | loss  4.06
+Train batches[  196]                | loss  3.38
+Eval  batches[  312]                | loss  6.61
+[  5500] | gnorm 13.01 lr  0.000249 | loss  3.77
+Train batches[  196]                | loss  2.94
+Eval  batches[  312]                | loss  6.96
+[  6000] | gnorm 14.02 lr  0.000248 | loss  3.44
+Train batches[  196]                | loss  2.55
+Eval  batches[  312]                | loss  7.34
+[  6500] | gnorm 13.88 lr  0.000248 | loss  3.18
+Train batches[  196]                | loss  2.23
+Eval  batches[  312]                | loss  7.74
+[  7000] | gnorm 17.32 lr  0.000248 | loss  2.93
+Train batches[  196]                | loss  1.94
+Eval  batches[  312]                | loss  8.11
+[  7500] | gnorm 19.12 lr  0.000247 | loss  2.69
+Train batches[  196]                | loss  1.73
+Eval  batches[  312]                | loss  8.52
+[  8000] | gnorm 18.52 lr  0.000247 | loss  2.50
+Train batches[  196]                | loss  1.43
+Eval  batches[  312]                | loss  8.92
+[  8500] | gnorm 20.50 lr  0.000246 | loss  2.31
+Train batches[  196]                | loss  1.31
+Eval  batches[  312]                | loss  9.31
+[  9000] | gnorm 19.69 lr  0.000246 | loss  2.15
+Train batches[  196]                | loss  1.06
+Eval  batches[  312]                | loss  9.66
+[  9500] | gnorm 21.84 lr  0.000245 | loss  1.98
+Train batches[  196]                | loss  0.93
+Eval  batches[  312]                | loss 10.11
+[ 10000] | gnorm 19.83 lr  0.000245 | loss  1.88
+Train batches[  196]                | loss  0.85
+Eval  batches[  312]                | loss 10.37
+Model saved: checkpoints/mamba_gnn_estranet/mamba_gnn-10000.pth
+[ 10500] | gnorm 21.69 lr  0.000244 | loss  1.72
+Train batches[  196]                | loss  0.70
+Eval  batches[  312]                | loss 10.72
+[ 11000] | gnorm 20.87 lr  0.000244 | loss  1.64
+Train batches[  196]                | loss  0.61
+Eval  batches[  312]                | loss 11.06
+[ 11500] | gnorm 23.78 lr  0.000243 | loss  1.52
+Train batches[  196]                | loss  0.52
+Eval  batches[  312]                | loss 11.37
+[ 12000] | gnorm 18.39 lr  0.000242 | loss  1.44
+Train batches[  196]                | loss  0.46
+Eval  batches[  312]                | loss 11.64
+[ 12500] | gnorm 19.10 lr  0.000242 | loss  1.35
+Train batches[  196]                | loss  0.37
+Eval  batches[  312]                | loss 11.96
+[ 13000] | gnorm 20.77 lr  0.000241 | loss  1.28
+Train batches[  196]                | loss  0.30
+Eval  batches[  312]                | loss 12.08
+[ 13500] | gnorm 21.28 lr  0.000240 | loss  1.22
+Train batches[  196]                | loss  0.28
+Eval  batches[  312]                | loss 12.40
+[ 14000] | gnorm 20.69 lr  0.000240 | loss  1.15
+Train batches[  196]                | loss  0.31
+Eval  batches[  312]                | loss 12.77
+[ 14500] | gnorm 19.49 lr  0.000239 | loss  1.11
+Train batches[  196]                | loss  0.26
+Eval  batches[  312]                | loss 12.92
+[ 15000] | gnorm 18.09 lr  0.000238 | loss  1.04
+Train batches[  196]                | loss  0.21
+Eval  batches[  312]                | loss 13.14
+[ 15500] | gnorm 20.57 lr  0.000237 | loss  1.02
+Train batches[  196]                | loss  0.19
+Eval  batches[  312]                | loss 13.40
+[ 16000] | gnorm 21.28 lr  0.000236 | loss  0.95
+Train batches[  196]                | loss  0.16
+Eval  batches[  312]                | loss 13.56
+[ 16500] | gnorm 18.15 lr  0.000235 | loss  0.92
+Train batches[  196]                | loss  0.12
+Eval  batches[  312]                | loss 13.68
+[ 17000] | gnorm 22.14 lr  0.000234 | loss  0.88
+Train batches[  196]                | loss  0.11
+Eval  batches[  312]                | loss 13.92
+[ 17500] | gnorm 16.36 lr  0.000233 | loss  0.84
+Train batches[  196]                | loss  0.13
+Eval  batches[  312]                | loss 14.10
+[ 18000] | gnorm 18.51 lr  0.000232 | loss  0.82
+Train batches[  196]                | loss  0.10
+Eval  batches[  312]                | loss 14.12
+[ 18500] | gnorm 21.63 lr  0.000231 | loss  0.78
+Train batches[  196]                | loss  0.11
+Eval  batches[  312]                | loss 14.40
+[ 19000] | gnorm 20.86 lr  0.000230 | loss  0.77
+Train batches[  196]                | loss  0.10
+Eval  batches[  312]                | loss 14.59
+[ 19500] | gnorm 17.00 lr  0.000229 | loss  0.72
+Train batches[  196]                | loss  0.09
+Eval  batches[  312]                | loss 14.79
+[ 20000] | gnorm 16.50 lr  0.000228 | loss  0.71
+Train batches[  196]                | loss  0.07
+Eval  batches[  312]                | loss 14.97
+Model saved: checkpoints/mamba_gnn_estranet/mamba_gnn-20000.pth
+[ 20500] | gnorm 19.86 lr  0.000227 | loss  0.68
+Train batches[  196]                | loss  0.08
+Eval  batches[  312]                | loss 15.11
+[ 21000] | gnorm 15.46 lr  0.000226 | loss  0.66
+Train batches[  196]                | loss  0.06
+Eval  batches[  312]                | loss 15.18
+[ 21500] | gnorm 18.40 lr  0.000225 | loss  0.63
+Train batches[  196]                | loss  0.08
+Eval  batches[  312]                | loss 15.37
+[ 22000] | gnorm 17.62 lr  0.000223 | loss  0.62
+Train batches[  196]                | loss  0.05
+Eval  batches[  312]                | loss 15.42
+[ 22500] | gnorm 19.34 lr  0.000222 | loss  0.61
+Train batches[  196]                | loss  0.04
+Eval  batches[  312]                | loss 15.58
+[ 23000] | gnorm 17.54 lr  0.000221 | loss  0.58
+Train batches[  196]                | loss  0.04
+Eval  batches[  312]                | loss 15.64
+[ 23500] | gnorm 18.29 lr  0.000220 | loss  0.57
+Train batches[  196]                | loss  0.05
+Eval  batches[  312]                | loss 15.75
+[ 24000] | gnorm 16.84 lr  0.000218 | loss  0.55
+Train batches[  196]                | loss  0.04
+Eval  batches[  312]                | loss 15.81
+[ 24500] | gnorm 34.88 lr  0.000217 | loss  0.54
+Train batches[  196]                | loss  0.03
+Eval  batches[  312]                | loss 16.00
+[ 25000] | gnorm 16.16 lr  0.000216 | loss  0.52
+Train batches[  196]                | loss  0.02
+Eval  batches[  312]                | loss 16.08
+[ 25500] | gnorm 13.58 lr  0.000214 | loss  0.51
+Train batches[  196]                | loss  0.03
+Eval  batches[  312]                | loss 16.21
+[ 26000] | gnorm 19.10 lr  0.000213 | loss  0.49
+Train batches[  196]                | loss  0.04
+Eval  batches[  312]                | loss 16.47
+[ 26500] | gnorm 17.16 lr  0.000211 | loss  0.48
+Train batches[  196]                | loss  0.03
+Eval  batches[  312]                | loss 16.46
+[ 27000] | gnorm 13.84 lr  0.000210 | loss  0.46
+Train batches[  196]                | loss  0.03
+Eval  batches[  312]                | loss 16.62
+[ 27500] | gnorm 13.58 lr  0.000209 | loss  0.45
+Train batches[  196]                | loss  0.03
+Eval  batches[  312]                | loss 16.73
+[ 28000] | gnorm 16.96 lr  0.000207 | loss  0.44
+Train batches[  196]                | loss  0.02
+Eval  batches[  312]                | loss 16.68
+[ 28500] | gnorm 16.40 lr  0.000206 | loss  0.42
+Train batches[  196]                | loss  0.02
+Eval  batches[  312]                | loss 16.88
+[ 29000] | gnorm 18.10 lr  0.000204 | loss  0.42
+Train batches[  196]                | loss  0.02
+Eval  batches[  312]                | loss 16.90
+[ 29500] | gnorm 13.61 lr  0.000202 | loss  0.41
+Train batches[  196]                | loss  0.02
+Eval  batches[  312]                | loss 17.04
+[ 30000] | gnorm 13.94 lr  0.000201 | loss  0.40
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.14
+Model saved: checkpoints/mamba_gnn_estranet/mamba_gnn-30000.pth
+[ 30500] | gnorm 17.84 lr  0.000199 | loss  0.39
+Train batches[  196]                | loss  0.02
+Eval  batches[  312]                | loss 17.33
+[ 31000] | gnorm 14.80 lr  0.000198 | loss  0.38
+Train batches[  196]                | loss  0.02
+Eval  batches[  312]                | loss 17.35
+[ 31500] | gnorm 15.47 lr  0.000196 | loss  0.37
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.40
+[ 32000] | gnorm 13.22 lr  0.000194 | loss  0.36
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.59
+[ 32500] | gnorm 13.56 lr  0.000193 | loss  0.36
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.58
+[ 33000] | gnorm 13.94 lr  0.000191 | loss  0.34
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.68
+[ 33500] | gnorm 14.86 lr  0.000189 | loss  0.34
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.75
+[ 34000] | gnorm 15.05 lr  0.000188 | loss  0.33
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.84
+[ 34500] | gnorm 12.96 lr  0.000186 | loss  0.32
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.96
+[ 35000] | gnorm 13.65 lr  0.000184 | loss  0.31
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 17.97
+[ 35500] | gnorm 12.73 lr  0.000183 | loss  0.31
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 18.10
+[ 36000] | gnorm 14.64 lr  0.000181 | loss  0.30
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 18.19
+[ 36500] | gnorm 10.71 lr  0.000179 | loss  0.29
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 18.27
+[ 37000] | gnorm 12.44 lr  0.000177 | loss  0.29
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 18.36
+[ 37500] | gnorm 10.14 lr  0.000175 | loss  0.28
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 18.42
+[ 38000] | gnorm 15.00 lr  0.000174 | loss  0.28
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 18.52
+[ 38500] | gnorm 10.39 lr  0.000172 | loss  0.27
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 18.52
+[ 39000] | gnorm 12.92 lr  0.000170 | loss  0.27
+Train batches[  196]                | loss  0.01
+Eval  batches[  312]                | loss 18.63
+[ 39500] | gnorm 11.20 lr  0.000168 | loss  0.26
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 18.69
+[ 40000] | gnorm 13.81 lr  0.000166 | loss  0.25
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 18.69
+Model saved: checkpoints/mamba_gnn_estranet/mamba_gnn-40000.pth
+[ 40500] | gnorm 11.91 lr  0.000164 | loss  0.25
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 18.91
+[ 41000] | gnorm 13.53 lr  0.000162 | loss  0.24
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 18.82
+[ 41500] | gnorm 10.94 lr  0.000161 | loss  0.24
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.06
+[ 42000] | gnorm 10.49 lr  0.000159 | loss  0.23
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 18.98
+[ 42500] | gnorm 13.50 lr  0.000157 | loss  0.23
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.17
+[ 43000] | gnorm  9.94 lr  0.000155 | loss  0.23
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.12
+[ 43500] | gnorm 13.73 lr  0.000153 | loss  0.21
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.20
+[ 44000] | gnorm 13.31 lr  0.000151 | loss  0.21
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.31
+[ 44500] | gnorm  8.74 lr  0.000149 | loss  0.21
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.49
+[ 45000] | gnorm 12.65 lr  0.000147 | loss  0.20
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.40
+[ 45500] | gnorm 12.09 lr  0.000145 | loss  0.20
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.51
+[ 46000] | gnorm 13.93 lr  0.000143 | loss  0.19
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.66
+[ 46500] | gnorm 13.34 lr  0.000141 | loss  0.19
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.71
+[ 47000] | gnorm 10.33 lr  0.000139 | loss  0.19
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.77
+[ 47500] | gnorm 10.68 lr  0.000137 | loss  0.18
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.83
+[ 48000] | gnorm 12.24 lr  0.000135 | loss  0.18
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.80
+[ 48500] | gnorm 12.31 lr  0.000133 | loss  0.17
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 19.96
+[ 49000] | gnorm 24.57 lr  0.000131 | loss  0.17
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.01
+[ 49500] | gnorm  9.85 lr  0.000129 | loss  0.16
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.11
+[ 50000] | gnorm  9.61 lr  0.000127 | loss  0.16
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.23
+Model saved: checkpoints/mamba_gnn_estranet/mamba_gnn-50000.pth
+[ 50500] | gnorm 10.46 lr  0.000126 | loss  0.16
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.22
+[ 51000] | gnorm 10.42 lr  0.000124 | loss  0.16
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.27
+[ 51500] | gnorm 10.15 lr  0.000122 | loss  0.15
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.29
+[ 52000] | gnorm  9.19 lr  0.000120 | loss  0.15
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.39
+[ 52500] | gnorm 13.21 lr  0.000118 | loss  0.15
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.46
+[ 53000] | gnorm 11.09 lr  0.000116 | loss  0.14
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.43
+[ 53500] | gnorm  8.83 lr  0.000114 | loss  0.14
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.59
+[ 54000] | gnorm 11.03 lr  0.000112 | loss  0.13
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.58
+[ 54500] | gnorm  8.17 lr  0.000110 | loss  0.13
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.71
+[ 55000] | gnorm  9.48 lr  0.000108 | loss  0.13
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.82
+[ 55500] | gnorm 11.10 lr  0.000106 | loss  0.13
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.83
+[ 56000] | gnorm 11.74 lr  0.000104 | loss  0.13
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.88
+[ 56500] | gnorm  8.26 lr  0.000102 | loss  0.12
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 20.95
+[ 57000] | gnorm 10.36 lr  0.000100 | loss  0.12
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.04
+[ 57500] | gnorm  9.49 lr  0.000098 | loss  0.11
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.03
+[ 58000] | gnorm 10.77 lr  0.000096 | loss  0.11
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.23
+[ 58500] | gnorm  9.95 lr  0.000094 | loss  0.11
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.16
+[ 59000] | gnorm  8.91 lr  0.000092 | loss  0.11
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.24
+[ 59500] | gnorm  8.40 lr  0.000090 | loss  0.11
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.22
+[ 60000] | gnorm 10.67 lr  0.000089 | loss  0.10
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.33
+Model saved: checkpoints/mamba_gnn_estranet/mamba_gnn-60000.pth
+[ 60500] | gnorm  9.41 lr  0.000087 | loss  0.10
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.41
+[ 61000] | gnorm  5.14 lr  0.000085 | loss  0.10
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.43
+[ 61500] | gnorm  7.93 lr  0.000083 | loss  0.09
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.49
+[ 62000] | gnorm  6.50 lr  0.000081 | loss  0.09
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.52
+[ 62500] | gnorm  5.74 lr  0.000079 | loss  0.09
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.45
+[ 63000] | gnorm  7.84 lr  0.000077 | loss  0.09
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.59
+[ 63500] | gnorm  6.17 lr  0.000076 | loss  0.09
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.64
+[ 64000] | gnorm  8.06 lr  0.000074 | loss  0.08
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.86
+[ 64500] | gnorm  9.00 lr  0.000072 | loss  0.08
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.79
+[ 65000] | gnorm  5.63 lr  0.000070 | loss  0.08
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.72
+[ 65500] | gnorm  7.78 lr  0.000068 | loss  0.08
+Train batches[  196]                | loss  0.00
+Eval  batches[  312]                | loss 21.83
+---------------------------------------------------------------------------
+KeyboardInterrupt                         Traceback (most recent call last)
+/tmp/ipython-input-2460448685.py in <cell line: 0>()
+     33     # Display output in real-time
+     34     while True:
+---> 35         output = process.stdout.readline()
+     36         if output:
+     37             print(output.rstrip())
+
+KeyboardInterrupt: 
