@@ -51,3 +51,6 @@ Thumbs.db
 checkpoints/
 
 ATMega8515_raw_traces.h5
+
+# Local helper scripts and ephemeral workspace tools (ignored)
+/.workspace_tools/

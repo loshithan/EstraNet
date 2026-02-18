@@ -126,6 +126,43 @@ class CosineLRSchedule:
 
 
 # =============================================================================
+# LOSS FUNCTIONS
+# =============================================================================
+
+class FocalLoss(nn.Module):
+    """Multi-class Focal Loss
+
+    Reference: "Focal Loss for Dense Object Detection" (Lin et al.) adapted for
+    multi-class classification. The implementation multiplies the standard
+    cross-entropy by (1 - p_t)^gamma and an optional alpha weight.
+    """
+    def __init__(self, gamma: float = 2.5, alpha: float = 1.0, reduction: str = 'mean'):
+        super(FocalLoss, self).__init__()
+        self.gamma = float(gamma)
+        self.alpha = float(alpha)
+        self.reduction = reduction
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # logits: [B, C], targets: [B]
+        ce = F.cross_entropy(logits, targets, reduction='none')  # -log(p_t)
+        probs = torch.softmax(logits, dim=1)
+        pt = probs.gather(1, targets.unsqueeze(1)).squeeze(1)  # p_t
+        modulating_factor = (1.0 - pt) ** self.gamma
+        loss = self.alpha * modulating_factor * ce
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
+
+
+# =============================================================================
+# GUESSING ENTROPY EVALUATION (Matching EstraNet - 100 trials)
+# =============================================================================
+
+
+# =============================================================================
 # GUESSING ENTROPY EVALUATION (Matching EstraNet - 100 trials)
 # =============================================================================
 
@@ -326,8 +363,17 @@ def train(args):
         min_lr_ratio=args.min_lr_ratio
     )
     
-    # Loss function with label smoothing for regularization
-    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+    # Loss selection: Cross-Entropy (with optional label smoothing) or FocalLoss
+    loss_type = getattr(args, 'loss_type', 'cross_entropy')
+    loss_type = loss_type.lower()
+
+    if loss_type in ('focal', 'focal_loss'):
+        # Warn if label smoothing was specified together with focal (they conflict)
+        if getattr(args, 'label_smoothing', 0.0) > 0.0:
+            print("⚠ Warning: label_smoothing > 0 specified but FocalLoss is used — label smoothing will be ignored for FocalLoss.")
+        criterion = FocalLoss(gamma=args.focal_gamma, alpha=args.focal_alpha, reduction='mean')
+    else:
+        criterion = nn.CrossEntropyLoss(label_smoothing=getattr(args, 'label_smoothing', 0.0))
     
     # Training metrics
     num_train_batch = len(train_loader)
@@ -678,6 +724,14 @@ def main():
                        help='Gaussian noise std for augmentation')
     parser.add_argument('--augment_shift', type=int, default=5,
                        help='Max random time shift for augmentation')
+
+    # Loss type / focal loss params
+    parser.add_argument('--loss_type', type=str, default='cross_entropy',
+                       help="Loss type: 'cross_entropy' or 'focal' (or 'focal_loss')")
+    parser.add_argument('--focal_gamma', type=float, default=2.5,
+                       help='Focal loss gamma')
+    parser.add_argument('--focal_alpha', type=float, default=1.0,
+                       help='Focal loss alpha (scaling)')
     
     # Checkpoint config
     parser.add_argument('--checkpoint_dir', type=str, required=True,
@@ -705,6 +759,10 @@ def main():
     print(f"d_model:           {args.d_model}")
     print(f"mamba_layers:      {args.mamba_layers}")
     print(f"gnn_layers:        {args.gnn_layers}")
+    print(f"loss_type:         {args.loss_type}")
+    print(f"label_smoothing:   {args.label_smoothing}")
+    print(f"focal_gamma:       {args.focal_gamma}")
+    print(f"focal_alpha:       {args.focal_alpha}")
     print(f"checkpoint_dir:    {args.checkpoint_dir}")
     print("="*80 + "\n")
     
