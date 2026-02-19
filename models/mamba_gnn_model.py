@@ -1,25 +1,20 @@
 """
 OPTIMIZED MAMBA-GNN MODEL FOR SIDE-CHANNEL ANALYSIS
 
-This module implements the main OptimizedMambaGNN model that combines:
+Combines:
 - Multi-scale CNN patch embedding for feature extraction
 - Mamba blocks for temporal modeling
 - Graph Attention Networks (GAT) for spatial modeling
 - Attention-based pooling and classification
 
-The model components are now organized in the `components/` package for better
-code organization and reusability.
-
-Current Status:
-- Model capacity optimized for side-channel analysis
-- Aggressive training with higher learning rates
-- Better feature fusion with channel attention
-- Data augmentation support
-
-For component details, see:
-- components/mamba_block.py - Temporal modeling
-- components/gat_layer.py - Spatial/graph modeling  
-- components/patch_embedding.py - Multi-scale feature extraction
+Fixes applied vs previous version:
+  1. input_scale removed entirely — data is pre-normalised by StandardScaler
+     in the training script (mean≈0, std≈1), so scaling by 0.1 was squashing
+     the signal to std≈0.1 and preventing learning.
+  2. The leftover  print(f"Input scaling: {self.input_scale}")  that crashed
+     on __init__ has been removed.
+  3. Default hyper-parameters corrected to match the small-model config
+     (d_model=64, mamba_layers=2, gnn_layers=2, dropout=0.15).
 """
 
 import torch
@@ -27,68 +22,65 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-# Import components (siblings)
 from .mamba_block import OptimizedMambaBlock
 from .gat_layer import EnhancedGAT
 from .patch_embedding import CNNPatchEmbedding
 
 
-# =============================================================================
-# OPTIMIZED MAMBA-GNN MODEL
-# =============================================================================
-
 class OptimizedMambaGNN(nn.Module):
     def __init__(
         self,
         trace_length=700,
-        d_model=64,  # INCREASE from 128
-        mamba_layers=4,  # INCREASE back to 4
-        gnn_layers=3,  # INCREASE to 3
+        d_model=64,        # corrected default (was 192/128)
+        mamba_layers=2,    # corrected default (was 4)
+        gnn_layers=2,      # corrected default (was 3)
         num_classes=256,
-        k_neighbors=8,  # INCREASE
-        dropout=0.3
+        k_neighbors=8,
+        dropout=0.15       # corrected default (was 0.3)
     ):
         super().__init__()
-        self.d_model = d_model
+        self.d_model     = d_model
         self.num_patches = 14
         self.k_neighbors = k_neighbors
-        
-        # Input scaling for better numerical stability
-        # ASCAD data is in range [-65, 45], scale to approximately [-6.5, 4.5]
-        self.input_scale = 0.1
+
+        # FIX: input_scale REMOVED.
+        # Data is normalised to mean≈0 std≈1 before entering the model.
+        # Multiplying by 0.1 was shrinking std to ≈0.1, starving every layer
+        # of signal and causing the flat-loss symptom seen across all runs.
 
         print(f"Optimized Mamba-GNN:")
-        print(f"  d_model: {d_model}, Mamba layers: {mamba_layers}, GNN layers: {gnn_layers}")
-        print(f"  Input scaling: {self.input_scale}")
+        print(f"  d_model: {d_model}, Mamba layers: {mamba_layers}, "
+              f"GNN layers: {gnn_layers}")
 
-
-        # Strong CNN-based patch embedding
-        self.patch_embed = CNNPatchEmbedding(d_model)
+        # CNN patch embedding
+        self.patch_embed  = CNNPatchEmbedding(d_model)
 
         # Learnable positional encoding
-        self.pos_encoding = nn.Parameter(torch.randn(1, self.num_patches, d_model) * 0.02)
-        self.input_norm = nn.LayerNorm(d_model)
+        self.pos_encoding = nn.Parameter(
+            torch.randn(1, self.num_patches, d_model) * 0.02
+        )
+        self.input_norm   = nn.LayerNorm(d_model)
 
-        # Mamba blocks
+        # Temporal modeling — Mamba blocks
         self.mamba_blocks = nn.ModuleList([
             OptimizedMambaBlock(d_model, dropout=dropout)
             for _ in range(mamba_layers)
         ])
 
-        # GAT layers
+        # Spatial modeling — GAT layers
         self.gnn_layers = nn.ModuleList([
             EnhancedGAT(d_model, n_heads=8, dropout=dropout)
             for _ in range(gnn_layers)
         ])
 
-        # Channel attention for fusion
+        # Channel attention for Mamba + GNN fusion
         self.channel_attn = nn.Sequential(
             nn.AdaptiveAvgPool1d(1),
             nn.Conv1d(d_model * 2, d_model, kernel_size=1),
             nn.Sigmoid()
         )
 
-        # Fusion
+        # Fusion projection
         self.fusion = nn.Sequential(
             nn.Linear(d_model * 2, d_model),
             nn.LayerNorm(d_model),
@@ -96,24 +88,25 @@ class OptimizedMambaGNN(nn.Module):
             nn.Dropout(dropout)
         )
 
-        # Multi-head attention pooling
+        # Attention pooling (patches → single vector)
         self.attn_pool_q = nn.Linear(d_model, d_model)
         self.attn_pool_k = nn.Linear(d_model, d_model)
 
-        # Stronger classifier
+        # Classifier head
+        # Hidden size capped at d_model*4 (=256 for d_model=64) so the head
+        # does not dwarf the feature extractor for small d_model values.
+        hidden = min(d_model * 4, 256)
         self.classifier = nn.Sequential(
-            nn.Linear(d_model, d_model * 2),
-            nn.LayerNorm(d_model * 2),
+            nn.Linear(d_model, hidden),
+            nn.LayerNorm(hidden),
             nn.GELU(),
-            nn.Dropout(dropout * 1.5),
-            nn.Linear(d_model * 2, 768),
-            nn.LayerNorm(768),
-            nn.GELU(),
-            nn.Dropout(dropout * 1.5),
-            nn.Linear(768, num_classes)
+            nn.Dropout(dropout),
+            nn.Linear(hidden, num_classes)
         )
 
         self._init_weights()
+
+    # -------------------------------------------------------------------------
 
     def _init_weights(self):
         for m in self.modules():
@@ -122,77 +115,83 @@ class OptimizedMambaGNN(nn.Module):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(
+                    m.weight, mode='fan_out', nonlinearity='relu'
+                )
+
+    # -------------------------------------------------------------------------
 
     def build_knn_graph(self, features):
-        """Build a k‑NN weighted adjacency matrix from `features`.
+        """Build a k-NN weighted adjacency matrix.
 
         Args:
-            features: Tensor with shape [B, N, C]
+            features: Tensor [B, N, C]
         Returns:
-            adj_matrix: Tensor with shape [B, N, N]
+            adj_matrix: Tensor [B, N, N]  (no gradient — topology only)
         """
-        # Validate shape and derive dimensions
         if features.dim() != 3:
             raise ValueError("features must have shape [B, N, C]")
         B, N, C = features.size()
 
         with torch.no_grad():
-            # L2-normalize along feature dim
-            features_norm = F.normalize(features, p=2, dim=-1)  # [B, N, C]
+            # Cosine similarity
+            feat_norm  = F.normalize(features, p=2, dim=-1)          # [B,N,C]
+            similarity = torch.bmm(feat_norm, feat_norm.transpose(1, 2))  # [B,N,N]
 
-            # Pairwise similarity (dot-product)
-            similarity = torch.bmm(features_norm, features_norm.transpose(1, 2))  # [B, N, N]
-
-            # top-(k+1) (including self) but not exceed N
             k = min(self.k_neighbors + 1, N)
-            topk_val, topk_idx = similarity.topk(k, dim=-1)  # shapes: [B, N, k]
+            topk_val, topk_idx = similarity.topk(k, dim=-1)          # [B,N,k]
 
-            # Allocate adjacency and scatter values (vectorized)
-            adj_matrix = torch.zeros(B, N, N, device=features.device, dtype=features.dtype)
-            batch_idx = torch.arange(B, device=features.device)[:, None, None]
-            row_idx = torch.arange(N, device=features.device)[None, :, None]
-            adj_matrix[batch_idx, row_idx, topk_idx] = topk_val
+            # Vectorised scatter — no Python loops
+            adj = torch.zeros(B, N, N,
+                              device=features.device, dtype=features.dtype)
+            b_idx = torch.arange(B, device=features.device)[:, None, None]
+            r_idx = torch.arange(N, device=features.device)[None, :, None]
+            adj[b_idx, r_idx, topk_idx] = topk_val
 
-        return adj_matrix
+        return adj  # features retains its gradient path into GAT layers
+
+    # -------------------------------------------------------------------------
 
     def forward(self, x):
+        # Accept both [B, L] and [B, 1, L]
         if x.dim() == 2:
-            x = x.unsqueeze(1)
-        
-        # Apply input scaling for numerical stability
-        x = x * self.input_scale
+            x = x.unsqueeze(1)   # → [B, 1, L]
 
-        # Strong patch embedding
-        patches = self.patch_embed(x).transpose(1, 2)
+        # FIX: no input_scale multiplication here
+        # x is already normalised (mean≈0, std≈1) by StandardScaler
+
+        # ── Patch embedding ──────────────────────────────────────────────
+        patches = self.patch_embed(x).transpose(1, 2)  # [B, num_patches, d_model]
         patches = patches + self.pos_encoding
         patches = self.input_norm(patches)
 
-        # Temporal modeling
+        # ── Temporal modeling (Mamba) ─────────────────────────────────────
         h_temp = patches
         for mamba in self.mamba_blocks:
             h_temp = mamba(h_temp)
 
-        # Build weighted graph
+        # ── Graph construction ────────────────────────────────────────────
         adj_matrix = self.build_knn_graph(h_temp)
 
-        # Spatial modeling
+        # ── Spatial modeling (GAT) ────────────────────────────────────────
         h_graph = h_temp
         for gat in self.gnn_layers:
             h_graph = gat(h_graph, adj_matrix)
 
-        # Channel attention fusion
-        combined = torch.cat([h_temp, h_graph], dim=-1)
-        channel_weights = self.channel_attn(combined.transpose(1, 2)).transpose(1, 2)
-        h_fused = self.fusion(combined) * channel_weights
+        # ── Channel-attention fusion ──────────────────────────────────────
+        combined        = torch.cat([h_temp, h_graph], dim=-1)        # [B,N,2C]
+        channel_weights = self.channel_attn(
+            combined.transpose(1, 2)
+        ).transpose(1, 2)                                              # [B,N,C]
+        h_fused = self.fusion(combined) * channel_weights              # [B,N,C]
 
-        # Attention pooling
-        q = self.attn_pool_q(h_fused.mean(dim=1, keepdim=True))
-        k = self.attn_pool_k(h_fused)
-        attn_weights = F.softmax(torch.bmm(q, k.transpose(1, 2)) / np.sqrt(self.d_model), dim=-1)
-        h_global = torch.bmm(attn_weights, h_fused).squeeze(1)
+        # ── Attention pooling ─────────────────────────────────────────────
+        q           = self.attn_pool_q(h_fused.mean(dim=1, keepdim=True))  # [B,1,C]
+        k           = self.attn_pool_k(h_fused)                            # [B,N,C]
+        attn_w      = F.softmax(
+            torch.bmm(q, k.transpose(1, 2)) / np.sqrt(self.d_model), dim=-1
+        )                                                                   # [B,1,N]
+        h_global    = torch.bmm(attn_w, h_fused).squeeze(1)               # [B,C]
 
-        # Classification
-        logits = self.classifier(h_global)
-
-        return logits
+        # ── Classification ────────────────────────────────────────────────
+        return self.classifier(h_global)

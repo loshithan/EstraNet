@@ -3,7 +3,7 @@ Optimized Mamba Block for Temporal Modeling
 
 This module implements the OptimizedMambaBlock, which provides stronger temporal
 modeling capabilities for side-channel analysis. The block uses depthwise convolutions
-with batch normalization and pointwise convolutions for efficient feature mixing.
+with group  normalization and pointwise convolutions for efficient feature mixing.
 
 Key Features:
 - Depthwise separable convolutions for efficiency
