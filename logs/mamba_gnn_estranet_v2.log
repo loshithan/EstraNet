@@ -1,0 +1,87 @@
+
+================================================================================
+CONFIGURATION (EstraNet-aligned)
+================================================================================
+  data_path             : data/ASCAD.h5
+  target_byte           : 2
+  input_length          : 700
+  do_train              : True
+  train_batch_size      : 256
+  eval_batch_size       : 32
+  train_steps           : 50000
+  iterations            : 500
+  eval_steps            : 500
+  save_steps            : 5000
+  max_eval_batch        : 312
+  learning_rate         : 0.0001
+  clip                  : 0.3
+  min_lr_ratio          : 0.004
+  warmup_steps          : 1000
+  d_model               : 64
+  mamba_layers          : 2
+  gnn_layers            : 2
+  k_neighbors           : 8
+  dropout               : 0.25
+  weight_decay          : 0.01
+  label_smoothing       : 0.1
+  early_stopping        : 0
+  augment_noise         : 0.03
+  augment_shift         : 2
+  loss_type             : cross_entropy
+  focal_gamma           : 2.5
+  focal_alpha           : 1.0
+  checkpoint_dir        : checkpoints/mamba_gnn_estranet_v2
+  checkpoint_idx        : 0
+  warm_start            : False
+  result_path           : results/mamba_gnn
+================================================================================
+
+================================================================================
+MAMBA-GNN TRAINING (EstraNet-aligned configuration)
+================================================================================
+
+Device: cpu
+Loading ASCAD from: data/ASCAD.h5
+Training traces:  (50000, 700)
+Attack traces:    (10000, 700)
+Target byte:      2
+
+=== DATA DIAGNOSTIC ===
+X_train  mean: 0.0000   (should be ~0.0)
+X_train  std:  1.0000    (should be ~1.0)
+X_attack mean: 0.0184
+X_attack std:  1.0029
+y_train unique labels: 256
+y_train first 10: [ 38  47  38  18 100 188 146 199  32 204]
+Most common labels:  [(103, 244), (38, 239), (90, 234), (133, 232), (251, 231)]
+Least common labels: [(222, 164), (41, 163), (253, 162), (152, 161), (213, 154)]
+=== END DIAGNOSTIC ===
+
+Optimized Mamba-GNN:
+  d_model: 64, Mamba layers: 2, GNN layers: 2
+
+Model Parameters: 242,388
+Loss: CrossEntropyLoss  label_smoothing=0.1
+Gradient clip:  0.3
+Training batches per iteration: 196
+Total training steps:           50000
+Save checkpoints every:         5000 steps
+
+================================================================================
+Starting training...
+================================================================================
+
+C:\Users\User\AppData\Roaming\Python\Python313\site-packages\torch\utils\data\dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+=== FIRST BATCH DIAGNOSTIC ===
+data shape : torch.Size([256, 700])
+data mean  : 0.0010  (should be ~0)
+data std   : 0.9882   (should be ~1)
+target[:10]: [29, 142, 115, 237, 230, 153, 165, 242, 75, 66]
+output shape       : torch.Size([256, 256])
+output mean        : -0.0027
+output std         : 0.2305
+max prob (first 5) : [0.0064556957222521305, 0.00677516357973218, 0.007945800200104713, 0.008236504159867764, 0.006327885203063488]
+uniform baseline   : 0.0039
+=== END FIRST BATCH DIAGNOSTIC ===
+

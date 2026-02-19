@@ -70,7 +70,7 @@ class OptimizedMambaBlock(nn.Module):
 
         self.out_proj = nn.Linear(self.d_inner, d_model, bias=False)
         self.dropout = nn.Dropout(dropout)
-        self.gamma = nn.Parameter(torch.ones(1) * 0.1)  # was 1.0
+        self.gamma = nn.Parameter(torch.ones(1) * 1.0)
 
     def forward(self, x):
         """
