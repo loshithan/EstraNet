@@ -63,14 +63,14 @@ class OptimizedMambaBlock(nn.Module):
             groups=self.d_inner,
             bias=False
         )
-        self.conv_norm = nn.BatchNorm1d(self.d_inner)
+        self.conv_norm = nn.GroupNorm(1, self.d_inner)  # was BatchNorm1d
 
         # Add pointwise convolution for better feature mixing
         self.pointwise = nn.Conv1d(self.d_inner, self.d_inner, kernel_size=1)
 
         self.out_proj = nn.Linear(self.d_inner, d_model, bias=False)
         self.dropout = nn.Dropout(dropout)
-        self.gamma = nn.Parameter(torch.ones(1) * 1.0)  # Increased from 0.1 for better gradient flow
+        self.gamma = nn.Parameter(torch.ones(1) * 0.1)  # was 1.0
 
     def forward(self, x):
         """

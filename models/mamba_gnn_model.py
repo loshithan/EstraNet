@@ -41,12 +41,12 @@ class OptimizedMambaGNN(nn.Module):
     def __init__(
         self,
         trace_length=700,
-        d_model=192,  # INCREASE from 128
+        d_model=64,  # INCREASE from 128
         mamba_layers=4,  # INCREASE back to 4
         gnn_layers=3,  # INCREASE to 3
         num_classes=256,
         k_neighbors=8,  # INCREASE
-        dropout=0.15
+        dropout=0.3
     ):
         super().__init__()
         self.d_model = d_model
@@ -125,21 +125,34 @@ class OptimizedMambaGNN(nn.Module):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
 
     def build_knn_graph(self, features):
-        features = features.detach()
-        B, N, C = features.shape
+        """Build a k‑NN weighted adjacency matrix from `features`.
 
-        # Compute pairwise distances
-        features_norm = F.normalize(features, p=2, dim=-1)
-        similarity = torch.bmm(features_norm, features_norm.transpose(1, 2))
+        Args:
+            features: Tensor with shape [B, N, C]
+        Returns:
+            adj_matrix: Tensor with shape [B, N, N]
+        """
+        # Validate shape and derive dimensions
+        if features.dim() != 3:
+            raise ValueError("features must have shape [B, N, C]")
+        B, N, C = features.size()
 
-        # Top-k + self-connection
-        topk_val, topk_idx = similarity.topk(min(self.k_neighbors + 1, N), dim=-1)
+        with torch.no_grad():
+            # L2-normalize along feature dim
+            features_norm = F.normalize(features, p=2, dim=-1)  # [B, N, C]
 
-        # Create weighted adjacency
-        adj_matrix = torch.zeros(B, N, N, device=features.device)
-        for b in range(B):
-            for i in range(N):
-                adj_matrix[b, i, topk_idx[b, i]] = topk_val[b, i]
+            # Pairwise similarity (dot-product)
+            similarity = torch.bmm(features_norm, features_norm.transpose(1, 2))  # [B, N, N]
+
+            # top-(k+1) (including self) but not exceed N
+            k = min(self.k_neighbors + 1, N)
+            topk_val, topk_idx = similarity.topk(k, dim=-1)  # shapes: [B, N, k]
+
+            # Allocate adjacency and scatter values (vectorized)
+            adj_matrix = torch.zeros(B, N, N, device=features.device, dtype=features.dtype)
+            batch_idx = torch.arange(B, device=features.device)[:, None, None]
+            row_idx = torch.arange(N, device=features.device)[None, :, None]
+            adj_matrix[batch_idx, row_idx, topk_idx] = topk_val
 
         return adj_matrix
 
