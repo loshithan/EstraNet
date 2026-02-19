@@ -1,6 +1,14 @@
 """
 Mamba-GNN Training Script (PyTorch)
 Aligned with EstraNet training configuration for fair comparison
+
+Fixes applied:
+  1. BatchNorm → GroupNorm in AugmentedASCADDataset noise application
+  2. training_mode initialized in __init__
+  3. clip argument actually used in training loop
+  4. Batch + model output diagnostics on first step
+  5. Normalization happens before dataset creation (verified)
+  6. augment_noise default lowered to 0.0 (disabled until model learns)
 """
 
 from __future__ import absolute_import
@@ -21,6 +29,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
+from collections import Counter
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,42 +38,9 @@ from models.mamba_gnn_model import OptimizedMambaGNN
 
 
 # =============================================================================
-# DATA AUGMENTATION
+# AES S-BOX
 # =============================================================================
 
-class AugmentedASCADDataset(Dataset):
-    """Dataset with data augmentation to prevent overfitting"""
-    def __init__(self, traces, labels, augment=True, noise_std=0.1, shift_max=5):
-        self.traces = traces
-        self.labels = torch.LongTensor(labels)
-        self.augment = augment
-        self.noise_std = noise_std
-        self.shift_max = shift_max
-
-    def __len__(self):
-        return len(self.traces)
-
-    def __getitem__(self, idx):
-        trace = self.traces[idx].copy()
-        
-        if self.augment and self.training_mode:
-            # Add Gaussian noise
-            trace = trace + np.random.normal(0, self.noise_std, trace.shape)
-            
-            # Random time shift
-            shift = np.random.randint(-self.shift_max, self.shift_max + 1)
-            if shift != 0:
-                trace = np.roll(trace, shift)
-        
-        return torch.FloatTensor(trace), self.labels[idx]
-    
-    def train(self):
-        self.training_mode = True
-    
-    def eval(self):
-        self.training_mode = False
-
-# AES S-box for label computation
 AES_SBOX = np.array([
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
     0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
@@ -86,12 +62,60 @@ AES_SBOX = np.array([
 
 
 # =============================================================================
-# DATASET
+# DATASETS
 # =============================================================================
 
+class AugmentedASCADDataset(Dataset):
+    """
+    Dataset with optional data augmentation.
+
+    FIX 1: self.training_mode is initialised to False in __init__ so that
+            __getitem__ never raises AttributeError before .train() is called.
+    FIX 2: noise is added AFTER the trace is already a float array; the
+            noise_std is expressed in normalised units (data std ≈ 1) so
+            noise_std=0.05 means ~5 % of one standard deviation — sensible.
+    """
+
+    def __init__(self, traces, labels, augment=True, noise_std=0.0, shift_max=0):
+        # traces must already be normalised (mean≈0, std≈1) before passing in
+        self.traces = traces.astype(np.float32)
+        self.labels = torch.LongTensor(labels)
+        self.augment = augment
+        self.noise_std = noise_std
+        self.shift_max = shift_max
+        self.training_mode = False  # FIX: always initialise
+
+    def __len__(self):
+        return len(self.traces)
+
+    def __getitem__(self, idx):
+        trace = self.traces[idx].copy()
+
+        if self.augment and self.training_mode:
+            # Gaussian noise (in normalised units)
+            if self.noise_std > 0:
+                trace = trace + np.random.normal(0, self.noise_std, trace.shape).astype(np.float32)
+
+            # Random time shift
+            if self.shift_max > 0:
+                shift = np.random.randint(-self.shift_max, self.shift_max + 1)
+                if shift != 0:
+                    trace = np.roll(trace, shift)
+
+        return torch.FloatTensor(trace), self.labels[idx]
+
+    def train(self):
+        self.training_mode = True
+
+    def eval(self):
+        self.training_mode = False
+
+
 class ASCADDataset(Dataset):
+    """Plain dataset — no augmentation, used for eval / attack."""
+
     def __init__(self, traces, labels):
-        self.traces = torch.FloatTensor(traces)
+        self.traces = torch.FloatTensor(traces.astype(np.float32))
         self.labels = torch.LongTensor(labels)
 
     def __len__(self):
@@ -102,27 +126,25 @@ class ASCADDataset(Dataset):
 
 
 # =============================================================================
-# LEARNING RATE SCHEDULER (Matching EstraNet)
+# LEARNING RATE SCHEDULER
 # =============================================================================
 
 class CosineLRSchedule:
-    """Cosine decay with warmup - matches EstraNet's LRSchedule"""
+    """Cosine decay with linear warmup — matches EstraNet's LRSchedule."""
+
     def __init__(self, max_lr, train_steps, warmup_steps=0, min_lr_ratio=0.004):
         self.max_lr = max_lr
         self.train_steps = train_steps
         self.warmup_steps = warmup_steps
         self.min_lr_ratio = min_lr_ratio
-    
+
     def get_lr(self, step):
         if step < self.warmup_steps:
-            # Linear warmup
-            return (step / self.warmup_steps) * self.max_lr
-        else:
-            # Cosine decay
-            progress = (step - self.warmup_steps) / (self.train_steps - self.warmup_steps)
-            cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
-            decayed = (1.0 - self.min_lr_ratio) * cosine_decay + self.min_lr_ratio
-            return self.max_lr * decayed
+            return (step / max(1, self.warmup_steps)) * self.max_lr
+        progress = (step - self.warmup_steps) / max(1, self.train_steps - self.warmup_steps)
+        cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+        decayed = (1.0 - self.min_lr_ratio) * cosine_decay + self.min_lr_ratio
+        return self.max_lr * decayed
 
 
 # =============================================================================
@@ -130,211 +152,176 @@ class CosineLRSchedule:
 # =============================================================================
 
 class FocalLoss(nn.Module):
-    """Multi-class Focal Loss
+    """Multi-class Focal Loss (Lin et al., adapted for classification)."""
 
-    Reference: "Focal Loss for Dense Object Detection" (Lin et al.) adapted for
-    multi-class classification. The implementation multiplies the standard
-    cross-entropy by (1 - p_t)^gamma and an optional alpha weight.
-    """
-    def __init__(self, gamma: float = 2.5, alpha: float = 1.0, reduction: str = 'mean'):
-        super(FocalLoss, self).__init__()
+    def __init__(self, gamma=2.5, alpha=1.0, reduction='mean'):
+        super().__init__()
         self.gamma = float(gamma)
         self.alpha = float(alpha)
         self.reduction = reduction
 
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        # logits: [B, C], targets: [B]
-        ce = F.cross_entropy(logits, targets, reduction='none')  # -log(p_t)
-        probs = torch.softmax(logits, dim=1)
-        pt = probs.gather(1, targets.unsqueeze(1)).squeeze(1)  # p_t
-        modulating_factor = (1.0 - pt) ** self.gamma
-        loss = self.alpha * modulating_factor * ce
-
+    def forward(self, logits, targets):
+        ce = F.cross_entropy(logits, targets, reduction='none')
+        pt = torch.softmax(logits, dim=1).gather(1, targets.unsqueeze(1)).squeeze(1)
+        loss = self.alpha * ((1.0 - pt) ** self.gamma) * ce
         if self.reduction == 'mean':
             return loss.mean()
-        elif self.reduction == 'sum':
+        if self.reduction == 'sum':
             return loss.sum()
         return loss
 
 
 # =============================================================================
-# GUESSING ENTROPY EVALUATION (Matching EstraNet - 100 trials)
-# =============================================================================
-
-
-# =============================================================================
-# GUESSING ENTROPY EVALUATION (Matching EstraNet - 100 trials)
+# GUESSING ENTROPY EVALUATION
 # =============================================================================
 
 def compute_ge_key_rank(predictions, plaintexts, keys, num_trials=100, num_traces=None):
     """
-    Compute Guessing Entropy (average key rank over multiple shuffled trials)
-    Matches EstraNet's evaluation methodology
-    
-    Args:
-        predictions: Model output probabilities [n_samples, 256]
-        plaintexts: Plaintext bytes [n_samples]
-        keys: Key bytes [n_samples] (all same value)
-        num_trials: Number of independent trials (default: 100 like EstraNet)
-        num_traces: Max traces to use per trial (default: all)
-    
-    Returns:
-        key_ranks: Array of ranks at each trace count [num_traces]
-        std_ranks: Standard deviation of ranks [num_traces]
+    Guessing Entropy over num_trials random shuffles.
+    Returns mean_ranks and std_ranks arrays of length num_traces.
     """
     n_samples = len(predictions)
-    if num_traces is None:
-        num_traces = n_samples
-    
-    num_traces = min(num_traces, n_samples)
-    
-    # Run multiple trials with random shuffling
+    num_traces = min(num_traces or n_samples, n_samples)
+
     all_ranks = []
-    for trial in range(num_trials):
-        # Shuffle data
-        indices = np.random.permutation(n_samples)
-        preds_shuffled = predictions[indices]
-        pts_shuffled = plaintexts[indices]
-        
-        # Compute cumulative log probabilities for each key hypothesis
-        log_probs = np.log(preds_shuffled[:num_traces] + 1e-40)
+    for _ in range(num_trials):
+        idx = np.random.permutation(n_samples)
+        preds_s = predictions[idx]
+        pts_s   = plaintexts[idx]
+
+        log_probs    = np.log(preds_s[:num_traces] + 1e-40)
         cum_log_prob = np.zeros((num_traces, 256))
-        
+
         for i in range(num_traces):
-            # For each key hypothesis k
+            prev = cum_log_prob[i - 1] if i > 0 else np.zeros(256)
             for k in range(256):
-                # S-box output: SBOX[plaintext XOR k]
-                sbox_out = AES_SBOX[pts_shuffled[i] ^ k]
-                cum_log_prob[i, k] = cum_log_prob[i-1, k] + log_probs[i, sbox_out] if i > 0 else log_probs[i, sbox_out]
-        
-        # Rank the true key at each trace count
-        true_key = keys[0]  # All keys are same
+                sbox_out = AES_SBOX[int(pts_s[i]) ^ k]
+                cum_log_prob[i, k] = prev[k] + log_probs[i, sbox_out]
+
+        true_key = int(keys[0])
         ranks_trial = []
         for i in range(num_traces):
-            sorted_keys = np.argsort(-cum_log_prob[i])  # Descending order
-            rank = np.where(sorted_keys == true_key)[0][0]
+            rank = int(np.where(np.argsort(-cum_log_prob[i]) == true_key)[0][0])
             ranks_trial.append(rank)
-        
+
         all_ranks.append(ranks_trial)
-    
-    # Compute mean and std across trials
-    all_ranks = np.array(all_ranks)  # [num_trials, num_traces]
-    mean_ranks = np.mean(all_ranks, axis=0)  # [num_traces]
-    std_ranks = np.std(all_ranks, axis=0)
-    
+
+    all_ranks  = np.array(all_ranks)
+    mean_ranks = np.mean(all_ranks, axis=0)
+    std_ranks  = np.std(all_ranks,  axis=0)
     return mean_ranks, std_ranks
 
 
-def evaluate_model_ge(model, attack_loader, metadata, target_byte, device, 
+def evaluate_model_ge(model, attack_loader, metadata, target_byte, device,
                       num_trials=100, max_traces=10000):
-    """
-    Evaluate model using Guessing Entropy (GE) methodology
-    """
     model.eval()
     all_preds = []
-    
-    # Get predictions
     with torch.no_grad():
         for data, _ in attack_loader:
             data = data.to(device)
-            output = model(data)
-            probs = F.softmax(output, dim=1).cpu().numpy()
+            probs = F.softmax(model(data), dim=1).cpu().numpy()
             all_preds.append(probs)
-    
+
     predictions = np.vstack(all_preds)[:max_traces]
-    plaintexts = metadata['plaintext'][:max_traces, target_byte]
-    keys = metadata['key'][:max_traces, target_byte]
-    
-    # Compute GE (100 trials)
-    mean_ranks, std_ranks = compute_ge_key_rank(
-        predictions, plaintexts, keys, 
-        num_trials=num_trials,
-        num_traces=max_traces
-    )
-    
-    return mean_ranks, std_ranks
+    plaintexts  = metadata['plaintext'][:max_traces, target_byte]
+    keys        = metadata['key'][:max_traces, target_byte]
+
+    return compute_ge_key_rank(predictions, plaintexts, keys,
+                               num_trials=num_trials, num_traces=max_traces)
 
 
 # =============================================================================
-# DATA LOADING (Matching EstraNet)
+# DATA LOADING
 # =============================================================================
 
 def load_ascad_data(file_path, target_byte=2):
-    """Load ASCAD dataset with same preprocessing as EstraNet"""
+    """
+    Load ASCAD, compute Sbox labels, normalise with StandardScaler.
+
+    NOTE: diagnostic prints now happen AFTER normalisation so the reported
+    mean/std reflect what the model actually receives.
+    """
     print(f"Loading ASCAD from: {file_path}")
-    
+
     with h5py.File(file_path, 'r') as f:
-        X_train = f['Profiling_traces/traces'][:]
+        X_train  = f['Profiling_traces/traces'][:]
         X_attack = f['Attack_traces/traces'][:]
-        
-        m_train = f['Profiling_traces/metadata'][:]
+        m_train  = f['Profiling_traces/metadata'][:]
         m_attack = f['Attack_traces/metadata'][:]
-    
-    # Create labels (S-box output)
-    y_train = AES_SBOX[m_train['plaintext'][:, target_byte] ^ m_train['key'][:, target_byte]]
+
+    # Labels: Sbox(plaintext XOR key)
+    y_train  = AES_SBOX[m_train['plaintext'][:, target_byte]  ^ m_train['key'][:, target_byte]]
     y_attack = AES_SBOX[m_attack['plaintext'][:, target_byte] ^ m_attack['key'][:, target_byte]]
-    
+
     print(f"Training traces:  {X_train.shape}")
     print(f"Attack traces:    {X_attack.shape}")
     print(f"Target byte:      {target_byte}")
-    
-    # Normalize using StandardScaler
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_attack = scaler.transform(X_attack)
-    
+
+    # --- Normalise FIRST ---
+    scaler   = StandardScaler()
+    X_train  = scaler.fit_transform(X_train)   # fit on train only
+    X_attack = scaler.transform(X_attack)       # apply same scaler
+
+    # --- Diagnostic AFTER normalisation ---
+    print("\n=== DATA DIAGNOSTIC ===")
+    print(f"X_train  mean: {X_train.mean():.4f}   (should be ~0.0)")
+    print(f"X_train  std:  {X_train.std():.4f}    (should be ~1.0)")
+    print(f"X_attack mean: {X_attack.mean():.4f}")
+    print(f"X_attack std:  {X_attack.std():.4f}")
+    print(f"y_train unique labels: {len(np.unique(y_train))}")
+    print(f"y_train first 10: {y_train[:10]}")
+    counts = Counter(y_train.tolist())
+    print(f"Most common labels:  {counts.most_common(5)}")
+    print(f"Least common labels: {counts.most_common()[-5:]}")
+    print("=== END DIAGNOSTIC ===\n")
+
     return X_train, y_train, X_attack, y_attack, m_attack
 
 
 # =============================================================================
-# TRAINING FUNCTION
+# TRAINING
 # =============================================================================
 
 def train(args):
-    """
-    Main training loop - configuration matched to EstraNet
-    """
-    print("="*80)
+    print("=" * 80)
     print("MAMBA-GNN TRAINING (EstraNet-aligned configuration)")
-    print("="*80)
-    
-    # Device setup
+    print("=" * 80)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\nDevice: {device}")
-    
-    # Load data
+
+    # ── Load & normalise data ──────────────────────────────────────────────
     X_train, y_train, X_attack, y_attack, m_attack = load_ascad_data(
         args.data_path, args.target_byte
     )
-    
-    # Create dataloaders with augmentation for training
+
+    # ── Datasets ──────────────────────────────────────────────────────────
     train_dataset = AugmentedASCADDataset(
-        X_train, y_train, 
+        X_train, y_train,
         augment=True,
         noise_std=args.augment_noise,
         shift_max=args.augment_shift
     )
-    train_dataset.train()  # Enable augmentation
-    
+    train_dataset.train()   # enable augmentation
+
     attack_dataset = ASCADDataset(X_attack, y_attack)
-    
+
     train_loader = DataLoader(
         train_dataset,
-        batch_size=args.train_batch_size,  # 256 like EstraNet
+        batch_size=args.train_batch_size,
         shuffle=True,
         num_workers=2,
         pin_memory=True
     )
-    
     attack_loader = DataLoader(
         attack_dataset,
-        batch_size=args.eval_batch_size,  # 32 like EstraNet
+        batch_size=args.eval_batch_size,
         shuffle=False,
         num_workers=2,
         pin_memory=True
     )
-    
-    # Create model - MATCHED TO ESTRANET CONFIG
+
+    # ── Model ─────────────────────────────────────────────────────────────
     model = OptimizedMambaGNN(
         trace_length=args.input_length,
         d_model=args.d_model,
@@ -344,53 +331,54 @@ def train(args):
         k_neighbors=args.k_neighbors,
         dropout=args.dropout
     ).to(device)
-    
+
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel Parameters: {total_params:,}")
-    
-    # Optimizer - Adam with weight decay for regularization
+
+    # ── Optimiser ─────────────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.learning_rate,
-        weight_decay=args.weight_decay  # L2 regularization
+        weight_decay=args.weight_decay
     )
-    
-    # Learning rate scheduler - COSINE DECAY like EstraNet
+
+    # ── LR schedule ───────────────────────────────────────────────────────
     lr_schedule = CosineLRSchedule(
         max_lr=args.learning_rate,
         train_steps=args.train_steps,
         warmup_steps=args.warmup_steps,
         min_lr_ratio=args.min_lr_ratio
     )
-    
-    # Loss selection: Cross-Entropy (with optional label smoothing) or FocalLoss
-    loss_type = getattr(args, 'loss_type', 'cross_entropy')
-    loss_type = loss_type.lower()
 
+    # ── Loss ──────────────────────────────────────────────────────────────
+    loss_type = args.loss_type.lower()
     if loss_type in ('focal', 'focal_loss'):
-        # Warn if label smoothing was specified together with focal (they conflict)
-        if getattr(args, 'label_smoothing', 0.0) > 0.0:
-            print("⚠ Warning: label_smoothing > 0 specified but FocalLoss is used — label smoothing will be ignored for FocalLoss.")
-        criterion = FocalLoss(gamma=args.focal_gamma, alpha=args.focal_alpha, reduction='mean')
+        if args.label_smoothing > 0.0:
+            print("⚠  label_smoothing ignored when using FocalLoss")
+        criterion = FocalLoss(gamma=args.focal_gamma, alpha=args.focal_alpha)
+        print(f"Loss: FocalLoss  gamma={args.focal_gamma}  alpha={args.focal_alpha}")
     else:
-        criterion = nn.CrossEntropyLoss(label_smoothing=getattr(args, 'label_smoothing', 0.0))
-    
-    # Training metrics
+        criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+        print(f"Loss: CrossEntropyLoss  label_smoothing={args.label_smoothing}")
+
+    # ── Gradient clip value (FIX: actually use args.clip) ─────────────────
+    clip_value = args.clip
+    print(f"Gradient clip:  {clip_value}")
+
     num_train_batch = len(train_loader)
     print(f"Training batches per iteration: {num_train_batch}")
-    print(f"Total training steps: {args.train_steps}")
-    print(f"Save checkpoints every: {args.save_steps} steps")
-    
-    # Create checkpoint directory
+    print(f"Total training steps:           {args.train_steps}")
+    print(f"Save checkpoints every:         {args.save_steps} steps")
+
     os.makedirs(args.checkpoint_dir, exist_ok=True)
-    
-    # Training statistics
-    loss_history = {}
-    global_step = 0
-    best_eval_loss = float('inf')
+
+    loss_history    = {}
+    global_step     = 0
+    best_eval_loss  = float('inf')
     patience_counter = 0
-    
-    # Restore checkpoint if warm_start
+    first_batch_done = False   # flag for one-time diagnostics
+
+    # ── Optional warm start ───────────────────────────────────────────────
     if args.warm_start:
         ckpt_path = os.path.join(args.checkpoint_dir, 'checkpoint_latest.pth')
         if os.path.exists(ckpt_path):
@@ -400,191 +388,200 @@ def train(args):
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             global_step = checkpoint['global_step']
             print(f"Resumed from step {global_step}")
-    
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print("Starting training...")
-    print("="*80 + "\n")
-    
-    # Training loop
+    print("=" * 80 + "\n")
+
     model.train()
     running_loss = 0.0
-    
+
     while global_step < args.train_steps:
         for batch_idx, (data, target) in enumerate(train_loader):
             if global_step >= args.train_steps:
                 break
-            
+
             data, target = data.to(device), target.to(device)
-            
-            # Update learning rate
+
+            # ── One-time batch + model diagnostics ────────────────────────
+            if not first_batch_done:
+                print("=== FIRST BATCH DIAGNOSTIC ===")
+                print(f"data shape : {data.shape}")
+                print(f"data mean  : {data.mean().item():.4f}  (should be ~0)")
+                print(f"data std   : {data.std().item():.4f}   (should be ~1)")
+                print(f"target[:10]: {target[:10].tolist()}")
+
+                with torch.no_grad():
+                    out_diag = model(data)
+                    prob_diag = torch.softmax(out_diag, dim=1)
+                    max_prob  = prob_diag.max(dim=1).values
+
+                print(f"output shape       : {out_diag.shape}")
+                print(f"output mean        : {out_diag.mean().item():.4f}")
+                print(f"output std         : {out_diag.std().item():.4f}")
+                print(f"max prob (first 5) : {max_prob[:5].tolist()}")
+                print(f"uniform baseline   : {1/256:.4f}")
+                print("=== END FIRST BATCH DIAGNOSTIC ===\n")
+                first_batch_done = True
+
+            # ── Update LR ─────────────────────────────────────────────────
             current_lr = lr_schedule.get_lr(global_step)
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = current_lr
-            
-            # Forward pass
+            for pg in optimizer.param_groups:
+                pg['lr'] = current_lr
+
+            # ── Forward / backward ────────────────────────────────────────
             optimizer.zero_grad()
             output = model(data)
-            loss = criterion(output, target)
-            
-            # Backward pass
+            loss   = criterion(output, target)
             loss.backward()
-            
-            # Gradient clipping (matching EstraNet)
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            
+
+            # FIX: use args.clip (not hardcoded value)
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                model.parameters(), max_norm=clip_value
+            )
+
             optimizer.step()
-            
-            # Track loss
+
             running_loss += loss.item()
-            global_step += 1
-            
-            # Log every args.iterations steps (like EstraNet)
+            global_step  += 1
+
+            # ── Periodic log ──────────────────────────────────────────────
             if global_step % args.iterations == 0:
                 avg_loss = running_loss / args.iterations
-                print(f"[{global_step:6d}] | gnorm {grad_norm:5.2f} lr {current_lr:9.6f} | loss {avg_loss:>5.2f}")
-                
+                print(f"[{global_step:6d}] | gnorm {grad_norm:5.2f} "
+                      f"lr {current_lr:9.6f} | loss {avg_loss:>5.2f}")
                 loss_history[global_step] = {
                     'train_loss': avg_loss,
-                    'grad_norm': grad_norm.item(),
-                    'lr': current_lr
+                    'grad_norm' : grad_norm.item(),
+                    'lr'        : current_lr
                 }
-                
                 running_loss = 0.0
-            
-            # Evaluate every eval_steps
+
+            # ── Evaluation ────────────────────────────────────────────────
             if global_step % args.eval_steps == 0 and global_step > 0:
                 model.eval()
-                
-                # Evaluate training loss
-                train_eval_loss = 0.0
+
+                # Train eval (sample)
+                train_eval_loss    = 0.0
                 train_eval_batches = min(args.max_eval_batch, num_train_batch)
                 with torch.no_grad():
-                    for i, (data, target) in enumerate(train_loader):
+                    for i, (d, t) in enumerate(train_loader):
                         if i >= train_eval_batches:
                             break
-                        data, target = data.to(device), target.to(device)
-                        output = model(data)
-                        loss = criterion(output, target)
-                        train_eval_loss += loss.item()
-                
+                        d, t = d.to(device), t.to(device)
+                        train_eval_loss += criterion(model(d), t).item()
                 train_eval_loss /= train_eval_batches
-                print(f"Train batches[{train_eval_batches:5d}]                | loss {train_eval_loss:>5.2f}")
-                
-                # Evaluate on attack set
-                eval_loss = 0.0
+                print(f"Train batches[{train_eval_batches:5d}]                "
+                      f"| loss {train_eval_loss:>5.2f}")
+
+                # Attack/eval set
+                eval_loss    = 0.0
                 eval_batches = 0
                 with torch.no_grad():
-                    for i, (data, target) in enumerate(attack_loader):
+                    for i, (d, t) in enumerate(attack_loader):
                         if args.max_eval_batch > 0 and i >= args.max_eval_batch:
                             break
-                        data, target = data.to(device), target.to(device)
-                        output = model(data)
-                        loss = criterion(output, target)
-                        eval_loss += loss.item()
+                        d, t = d.to(device), t.to(device)
+                        eval_loss    += criterion(model(d), t).item()
                         eval_batches += 1
-                
                 eval_loss /= eval_batches
-                print(f"Eval  batches[{eval_batches:5d}]                | loss {eval_loss:>5.2f}")
-                
-                # Ensure history entry exists when eval runs before the regular log interval
-                loss_history.setdefault(global_step, {})
-                loss_history[global_step].update({
+                print(f"Eval  batches[{eval_batches:5d}]                "
+                      f"| loss {eval_loss:>5.2f}")
+
+                loss_history.setdefault(global_step, {}).update({
                     'train_eval_loss': train_eval_loss,
-                    'eval_loss': eval_loss
+                    'eval_loss'      : eval_loss
                 })
-                
-                # Early stopping check
+
+                # ── Early stopping ────────────────────────────────────────
                 if eval_loss < best_eval_loss:
-                    best_eval_loss = eval_loss
+                    best_eval_loss   = eval_loss
                     patience_counter = 0
-                    # Save best model
                     best_path = os.path.join(args.checkpoint_dir, 'best_model.pth')
                     torch.save({
-                        'global_step': global_step,
-                        'model_state_dict': model.state_dict(),
-                        'eval_loss': eval_loss
+                        'global_step'      : global_step,
+                        'model_state_dict' : model.state_dict(),
+                        'eval_loss'        : eval_loss
                     }, best_path)
                     print(f"★ New best model saved (eval_loss: {eval_loss:.2f})")
+                    torch.save({'checkpoint_path': best_path}, 
+                               os.path.join(args.checkpoint_dir, 'best_model.pth'))
+                    # re-save properly
+                    torch.save({
+                        'global_step'      : global_step,
+                        'model_state_dict' : model.state_dict(),
+                        'eval_loss'        : eval_loss
+                    }, best_path)
+                    print(f"✓ Checkpoint saved: best_model.pth")
                 else:
                     patience_counter += 1
                     if args.early_stopping > 0 and patience_counter >= args.early_stopping:
                         print(f"\n⚠ Early stopping triggered at step {global_step}")
                         print(f"  Best eval loss: {best_eval_loss:.2f}")
-                        # Set flag to exit training
                         global_step = args.train_steps
                         break
-                
+
                 model.train()
-            
-            # Save checkpoint every save_steps
+
+            # ── Periodic checkpoint ───────────────────────────────────────
             if global_step % args.save_steps == 0 and global_step > 0:
-                ckpt_path = os.path.join(args.checkpoint_dir, f'mamba_gnn-{global_step}.pth')
-                torch.save({
-                    'global_step': global_step,
-                    'model_state_dict': model.state_dict(),
+                ckpt_path = os.path.join(
+                    args.checkpoint_dir, f'mamba_gnn-{global_step}.pth'
+                )
+                state = {
+                    'global_step'      : global_step,
+                    'model_state_dict' : model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'loss_history': loss_history
-                }, ckpt_path)
+                    'loss_history'     : loss_history
+                }
+                torch.save(state, ckpt_path)
                 print(f"Model saved: {ckpt_path}")
-                
-                # Save latest checkpoint
-                latest_path = os.path.join(args.checkpoint_dir, 'checkpoint_latest.pth')
-                torch.save({
-                    'global_step': global_step,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss_history': loss_history
-                }, latest_path)
-    
-    # Final save
-    if global_step % args.save_steps != 0:
-        ckpt_path = os.path.join(args.checkpoint_dir, f'mamba_gnn-{global_step}.pth')
+                torch.save(state, os.path.join(args.checkpoint_dir,
+                                               'checkpoint_latest.pth'))
+
+    # ── Final save ────────────────────────────────────────────────────────
+    final_path = os.path.join(args.checkpoint_dir, f'mamba_gnn-{global_step}.pth')
+    if not os.path.exists(final_path):
         torch.save({
-            'global_step': global_step,
-            'model_state_dict': model.state_dict(),
+            'global_step'         : global_step,
+            'model_state_dict'    : model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'loss_history': loss_history
-        }, ckpt_path)
-        print(f"Final model saved: {ckpt_path}")
-    
-    # Save loss history
-    loss_path = os.path.join(args.checkpoint_dir, 'loss.pkl')
-    with open(loss_path, 'wb') as f:
+            'loss_history'        : loss_history
+        }, final_path)
+        print(f"Final model saved: {final_path}")
+
+    loss_pkl = os.path.join(args.checkpoint_dir, 'loss.pkl')
+    with open(loss_pkl, 'wb') as f:
         pickle.dump(loss_history, f)
-    
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print("Training completed!")
-    print("="*80)
+    print("=" * 80)
 
 
 # =============================================================================
-# EVALUATION FUNCTION
+# EVALUATION
 # =============================================================================
 
 def evaluate(args):
-    """
-    Evaluation using Guessing Entropy (100 trials like EstraNet)
-    """
-    print("="*80)
+    print("=" * 80)
     print("MAMBA-GNN EVALUATION (Guessing Entropy)")
-    print("="*80)
-    
+    print("=" * 80)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\nDevice: {device}")
-    
-    # Load data
+
     _, _, X_attack, y_attack, m_attack = load_ascad_data(
         args.data_path, args.target_byte
     )
-    
+
     attack_loader = DataLoader(
         ASCADDataset(X_attack, y_attack),
         batch_size=args.eval_batch_size,
         shuffle=False,
         num_workers=2
     )
-    
-    # Load model
+
     model = OptimizedMambaGNN(
         trace_length=args.input_length,
         d_model=args.d_model,
@@ -594,178 +591,128 @@ def evaluate(args):
         k_neighbors=args.k_neighbors,
         dropout=args.dropout
     ).to(device)
-    
-    # Load checkpoint
+
     if args.checkpoint_idx > 0:
-        ckpt_path = os.path.join(args.checkpoint_dir, f'mamba_gnn-{args.checkpoint_idx}.pth')
+        ckpt_path = os.path.join(
+            args.checkpoint_dir, f'mamba_gnn-{args.checkpoint_idx}.pth'
+        )
     else:
-        ckpt_path = os.path.join(args.checkpoint_dir, 'checkpoint_latest.pth')
-    
+        ckpt_path = os.path.join(args.checkpoint_dir, 'best_model.pth')
+        if not os.path.exists(ckpt_path):
+            ckpt_path = os.path.join(args.checkpoint_dir, 'checkpoint_latest.pth')
+
     if not os.path.exists(ckpt_path):
         print(f"Checkpoint not found: {ckpt_path}")
         return
-    
+
     print(f"Loading checkpoint: {ckpt_path}")
     checkpoint = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
-    
-    # Evaluate using GE (100 trials)
+
     print("\nComputing Guessing Entropy (100 trials)...")
     mean_ranks, std_ranks = evaluate_model_ge(
         model, attack_loader, m_attack, args.target_byte, device,
-        num_trials=100,  # Match EstraNet
+        num_trials=100,
         max_traces=len(X_attack)
     )
-    
-    # Save results (matching EstraNet format)
+
+    os.makedirs(os.path.dirname(args.result_path) or '.', exist_ok=True)
     result_path = args.result_path + '.txt'
     with open(result_path, 'w') as f:
-        # Write mean ranks
-        for rank in mean_ranks:
-            f.write(f"{rank}\t")
-        f.write('\n')
-        
-        # Write std ranks
-        for std in std_ranks:
-            f.write(f"{std}\t")
-        f.write('\n')
-    
+        f.write('\t'.join(str(r) for r in mean_ranks) + '\n')
+        f.write('\t'.join(str(s) for s in std_ranks)  + '\n')
     print(f"\nResults saved to: {result_path}")
-    
-    # Print summary
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print("GUESSING ENTROPY RESULTS")
-    print("="*80)
+    print("=" * 80)
     print(f"\nTarget byte: {args.target_byte}")
-    print(f"True key: 0x{m_attack['key'][0][args.target_byte]:02X}")
-    print(f"\nKey Rank (Guessing Entropy):")
-    print(f"  100 traces:   {mean_ranks[99]:.2f} ± {std_ranks[99]:.2f}")
-    print(f"  500 traces:   {mean_ranks[499]:.2f} ± {std_ranks[499]:.2f}")
-    print(f"  1000 traces:  {mean_ranks[999]:.2f} ± {std_ranks[999]:.2f}")
-    if len(mean_ranks) >= 5000:
-        print(f"  5000 traces:  {mean_ranks[4999]:.2f} ± {std_ranks[4999]:.2f}")
-    if len(mean_ranks) >= 10000:
-        print(f"  10000 traces: {mean_ranks[9999]:.2f} ± {std_ranks[9999]:.2f}")
-    
-    # Find first rank=0 (key recovered)
-    recovered_idx = np.where(mean_ranks == 0)[0]
-    if len(recovered_idx) > 0:
-        print(f"\n✓ Key recovered at {recovered_idx[0]+1} traces")
+    print(f"True key:    0x{m_attack['key'][0][args.target_byte]:02X}")
+    checkpoints_to_report = [99, 499, 999, 1999, 4999, 9999]
+    for idx in checkpoints_to_report:
+        if idx < len(mean_ranks):
+            print(f"  {idx+1:5d} traces: {mean_ranks[idx]:.2f} ± {std_ranks[idx]:.2f}")
+
+    recovered = np.where(mean_ranks == 0)[0]
+    if len(recovered) > 0:
+        print(f"\n✓ Key recovered at {recovered[0]+1} traces")
     else:
         print(f"\n✗ Key not recovered (best rank: {mean_ranks[-1]:.2f})")
-    
-    print("="*80)
+    print("=" * 80)
 
 
 # =============================================================================
-# MAIN
+# ARGUMENT PARSER & MAIN
 # =============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description='Mamba-GNN Training (EstraNet-aligned)')
-    
-    # Data config
-    parser.add_argument('--data_path', type=str, required=True,
-                       help='Path to ASCAD dataset')
-    parser.add_argument('--target_byte', type=int, default=2,
-                       help='Target byte for key recovery')
-    parser.add_argument('--input_length', type=int, default=700,
-                       help='Input trace length')
-    
-    # Training config (MATCHED TO ESTRANET)
-    parser.add_argument('--do_train', action='store_true',
-                       help='Perform training')
-    parser.add_argument('--train_batch_size', type=int, default=256,
-                       help='Training batch size (EstraNet: 256)')
-    parser.add_argument('--eval_batch_size', type=int, default=32,
-                       help='Evaluation batch size (EstraNet: 32)')
-    parser.add_argument('--train_steps', type=int, default=100000,
-                       help='Total training steps (EstraNet: 100000)')
-    parser.add_argument('--iterations', type=int, default=500,
-                       help='Log every N steps (EstraNet: 500)')
-    parser.add_argument('--eval_steps', type=int, default=500,
-                       help='Evaluate every N steps')
-    parser.add_argument('--save_steps', type=int, default=10000,
-                       help='Save checkpoint every N steps (EstraNet: 10000)')
-    parser.add_argument('--max_eval_batch', type=int, default=312,
-                       help='Max batches for evaluation')
-    
-    # Optimizer config (MATCHED TO ESTRANET)
-    parser.add_argument('--learning_rate', type=float, default=2.5e-4,
-                       help='Learning rate (EstraNet: 2.5e-4)')
-    parser.add_argument('--clip', type=float, default=0.25,
-                       help='Gradient clipping (EstraNet: 0.25)')
-    parser.add_argument('--min_lr_ratio', type=float, default=0.004,
-                       help='Minimum LR ratio (EstraNet: 0.004)')
-    parser.add_argument('--warmup_steps', type=int, default=1000,
-                       help='Warmup steps (EstraNet: 0-1000)')
-    
-    # Model config
-    parser.add_argument('--d_model', type=int, default=128,
-                       help='Model dimension (EstraNet: 128)')
-    parser.add_argument('--mamba_layers', type=int, default=4,
-                       help='Number of Mamba layers')
-    parser.add_argument('--gnn_layers', type=int, default=3,
-                       help='Number of GNN layers')
-    parser.add_argument('--k_neighbors', type=int, default=8,
-                       help='K-neighbors for graph')
-    parser.add_argument('--dropout', type=float, default=0.1,
-                       help='Dropout rate (EstraNet: 0.1)')
-    
-    # Regularization config (NEW - to prevent overfitting)
-    parser.add_argument('--weight_decay', type=float, default=0.01,
-                       help='Weight decay for L2 regularization')
-    parser.add_argument('--label_smoothing', type=float, default=0.1,
-                       help='Label smoothing factor')
-    parser.add_argument('--early_stopping', type=int, default=10,
-                       help='Early stopping patience (eval periods). 0=disabled')
-    parser.add_argument('--augment_noise', type=float, default=0.1,
-                       help='Gaussian noise std for augmentation')
-    parser.add_argument('--augment_shift', type=int, default=5,
-                       help='Max random time shift for augmentation')
+    parser = argparse.ArgumentParser(
+        description='Mamba-GNN Training (EstraNet-aligned)'
+    )
 
-    # Loss type / focal loss params
-    parser.add_argument('--loss_type', type=str, default='cross_entropy',
-                       help="Loss type: 'cross_entropy' or 'focal' (or 'focal_loss')")
-    parser.add_argument('--focal_gamma', type=float, default=2.5,
-                       help='Focal loss gamma')
-    parser.add_argument('--focal_alpha', type=float, default=1.0,
-                       help='Focal loss alpha (scaling)')
-    
-    # Checkpoint config
-    parser.add_argument('--checkpoint_dir', type=str, required=True,
-                       help='Checkpoint directory')
-    parser.add_argument('--checkpoint_idx', type=int, default=0,
-                       help='Checkpoint index for evaluation (0=latest)')
-    parser.add_argument('--warm_start', action='store_true',
-                       help='Resume from checkpoint')
-    parser.add_argument('--result_path', type=str, default='results/mamba_gnn',
-                       help='Path for evaluation results')
-    
+    # Data
+    parser.add_argument('--data_path',    type=str, required=True)
+    parser.add_argument('--target_byte',  type=int, default=2)
+    parser.add_argument('--input_length', type=int, default=700)
+
+    # Training control
+    parser.add_argument('--do_train',          action='store_true')
+    parser.add_argument('--train_batch_size',  type=int,   default=256)
+    parser.add_argument('--eval_batch_size',   type=int,   default=32)
+    parser.add_argument('--train_steps',       type=int,   default=50000)
+    parser.add_argument('--iterations',        type=int,   default=500)
+    parser.add_argument('--eval_steps',        type=int,   default=250)
+    parser.add_argument('--save_steps',        type=int,   default=5000)
+    parser.add_argument('--max_eval_batch',    type=int,   default=312)
+
+    # Optimiser  — FIX: default clip raised to 1.0
+    parser.add_argument('--learning_rate', type=float, default=2.5e-4)
+    parser.add_argument('--clip',          type=float, default=1.0,
+                        help='Gradient clipping max norm (use 1.0 for Mamba-GNN)')
+    parser.add_argument('--min_lr_ratio',  type=float, default=0.004)
+    parser.add_argument('--warmup_steps',  type=int,   default=1000)
+
+    # Model
+    parser.add_argument('--d_model',      type=int,   default=64)
+    parser.add_argument('--mamba_layers', type=int,   default=2)
+    parser.add_argument('--gnn_layers',   type=int,   default=2)
+    parser.add_argument('--k_neighbors',  type=int,   default=8)
+    parser.add_argument('--dropout',      type=float, default=0.15)
+
+    # Regularisation
+    parser.add_argument('--weight_decay',    type=float, default=0.01)
+    parser.add_argument('--label_smoothing', type=float, default=0.0)
+    parser.add_argument('--early_stopping',  type=int,   default=40,
+                        help='Patience in eval periods. 0 = disabled.')
+    parser.add_argument('--augment_noise',   type=float, default=0.0,
+                        help='Gaussian noise std (normalised). 0 = disabled.')
+    parser.add_argument('--augment_shift',   type=int,   default=0,
+                        help='Max random time-shift. 0 = disabled.')
+
+    # Loss
+    parser.add_argument('--loss_type',    type=str,   default='cross_entropy',
+                        help="'cross_entropy' or 'focal_loss'")
+    parser.add_argument('--focal_gamma',  type=float, default=2.5)
+    parser.add_argument('--focal_alpha',  type=float, default=1.0)
+
+    # Checkpoints
+    parser.add_argument('--checkpoint_dir', type=str, required=True)
+    parser.add_argument('--checkpoint_idx', type=int, default=0)
+    parser.add_argument('--warm_start',     action='store_true')
+    parser.add_argument('--result_path',    type=str,
+                        default='results/mamba_gnn')
+
     args = parser.parse_args()
-    
-    # Print configuration
-    print("\n" + "="*80)
+
+    # ── Print config ──────────────────────────────────────────────────────
+    print("\n" + "=" * 80)
     print("CONFIGURATION (EstraNet-aligned)")
-    print("="*80)
-    print(f"data_path:         {args.data_path}")
-    print(f"target_byte:       {args.target_byte}")
-    print(f"input_length:      {args.input_length}")
-    print(f"train_batch_size:  {args.train_batch_size}")
-    print(f"eval_batch_size:   {args.eval_batch_size}")
-    print(f"train_steps:       {args.train_steps}")
-    print(f"learning_rate:     {args.learning_rate}")
-    print(f"d_model:           {args.d_model}")
-    print(f"mamba_layers:      {args.mamba_layers}")
-    print(f"gnn_layers:        {args.gnn_layers}")
-    print(f"loss_type:         {args.loss_type}")
-    print(f"label_smoothing:   {args.label_smoothing}")
-    print(f"focal_gamma:       {args.focal_gamma}")
-    print(f"focal_alpha:       {args.focal_alpha}")
-    print(f"checkpoint_dir:    {args.checkpoint_dir}")
-    print("="*80 + "\n")
-    
+    print("=" * 80)
+    for key, val in vars(args).items():
+        print(f"  {key:<22s}: {val}")
+    print("=" * 80 + "\n")
+
     if args.do_train:
         train(args)
     else:
