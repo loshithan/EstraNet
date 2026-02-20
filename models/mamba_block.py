@@ -1,15 +1,19 @@
 """
-Optimized Mamba Block for Temporal Modeling
+Mamba Blocks for Temporal Modeling
 
-This module implements the OptimizedMambaBlock, which provides stronger temporal
-modeling capabilities for side-channel analysis. The block uses depthwise convolutions
-with group  normalization and pointwise convolutions for efficient feature mixing.
+Two implementations:
 
-Key Features:
-- Depthwise separable convolutions for efficiency
-- Batch normalization for stable training
-- Residual connections with learnable scaling
-- GELU activation for smooth gradients
+1. SelectiveMambaBlock  — the REAL Mamba (S6) algorithm.
+   - Selective State Space Model: A, B, C, Δ are input-dependent
+   - Complexity: O(n · d_state) — LINEAR in sequence length  ← research novelty
+   - Receptive field: GLOBAL — hidden state h(t) accumulates all x(0)...x(t-1)
+   - vs Transformer self-attention: O(n²) — quadratic
+
+2. OptimizedMambaBlock  — legacy gated depthwise-CNN (kept for ablation/compat).
+   - NOT a real SSM; local receptive field ≈ kernel × layers
+
+Reference: "Mamba: Linear-Time Sequence Modeling with Selective State Spaces"
+           Gu & Dao, 2023. https://arxiv.org/abs/2312.00752
 """
 
 import torch
@@ -18,51 +22,133 @@ import torch.nn.functional as F
 import math
 
 
-class TransformerSequenceBlock(nn.Module):
+class SelectiveMambaBlock(nn.Module):
     """
-    Standard Transformer encoder block: Multi-Head Self-Attention + FFN.
+    Real Mamba block: S6 (Selective State Space Model).
 
-    Unlike the gated depthwise-CNN block (OptimizedMambaBlock), this has
-    *global* receptive field — every position attends to every other position.
-    This is exactly what EstraNet's transformer uses and why it can locate the
-    narrow AES leakage window anywhere in 700 samples.
+    Architecture per token x_t ∈ ℝ^d_model:
+
+        [x_ssm, z] = in_proj(LayerNorm(x))      # split into SSM + gate branches
+        x_ssm  = SiLU(conv1d(x_ssm))            # short causal conv (local smooth)
+        Δ, B, C = x_proj(x_ssm)                 # ALL selective (input-dependent)
+        Δ       = softplus(dt_proj(Δ))           # positive time-step size
+
+        # Discretise continuous A, B with ZOH:
+        Ā(t) = exp(Δ(t) · A)                    # [B, L, d_inner, d_state]
+        B̄(t) = Δ(t) · B(t) · x_ssm(t)
+
+        # Recurrent scan — O(n · d_state), global receptive field:
+        h(t) = Ā(t) · h(t-1) + B̄(t)
+        y(t) = C(t) · h(t) + D · x_ssm(t)
+
+        output = out_proj(y ⊙ SiLU(z))
+        return  residual + dropout(output)
+
+    Complexity vs Transformer:
+        Transformer self-attention: O(n² · d)       ← quadratic
+        This SSM scan:              O(n · d_inner · d_state)  ← LINEAR  ✓
 
     Args:
-        d_model   (int): Feature dimension.
-        n_heads   (int): Number of attention heads. Default: 8
-        ffn_mult  (int): FFN hidden = d_model * ffn_mult. Default: 4
-        dropout (float): Dropout on attention weights and FFN. Default: 0.1
+        d_model (int):   Input/output feature dimension.
+        d_state (int):   SSM state size N. Default: 16
+        d_conv  (int):   Short causal conv kernel size. Default: 4
+        expand  (int):   d_inner = expand × d_model. Default: 2
+        dt_rank       :  Rank of Δ projection. 'auto' → ceil(d_model/16).
+        dt_min (float):  Min initial Δ.  Default: 0.001
+        dt_max (float):  Max initial Δ.  Default: 0.1
+        dropout(float):  Output dropout probability.
     """
 
-    def __init__(self, d_model, n_heads=8, ffn_mult=4, dropout=0.1):
+    def __init__(self, d_model, d_state=16, d_conv=4, expand=2,
+                 dt_rank='auto', dt_min=0.001, dt_max=0.1, dropout=0.1):
         super().__init__()
-        assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
-        self.d_model  = d_model
-        self.n_heads  = n_heads
-        self.d_head   = d_model // n_heads
-        self.scale    = math.sqrt(self.d_head)
+        self.d_model = d_model
+        self.d_state = d_state
+        self.d_inner = int(expand * d_model)
+        self.dt_rank = math.ceil(d_model / 16) if dt_rank == 'auto' else dt_rank
 
-        # Self-attention projections
-        self.q_proj = nn.Linear(d_model, d_model, bias=False)
-        self.k_proj = nn.Linear(d_model, d_model, bias=False)
-        self.v_proj = nn.Linear(d_model, d_model, bias=False)
-        self.o_proj = nn.Linear(d_model, d_model, bias=False)
+        self.norm    = nn.LayerNorm(d_model)
 
-        self.attn_drop = nn.Dropout(dropout)
+        # in_proj: d_model → 2 × d_inner  (SSM branch + gate)
+        self.in_proj = nn.Linear(d_model, self.d_inner * 2, bias=False)
 
-        # Feed-forward network
-        ffn_hidden = d_model * ffn_mult
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model, ffn_hidden),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(ffn_hidden, d_model),
-            nn.Dropout(dropout),
+        # Short causal depthwise conv for local neighbourhood context
+        self.conv1d  = nn.Conv1d(
+            in_channels=self.d_inner, out_channels=self.d_inner,
+            kernel_size=d_conv, padding=d_conv - 1,
+            groups=self.d_inner, bias=True,
         )
 
-        # Layer norms (pre-norm variant — more stable)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
+        # x_proj: d_inner → (dt_rank + d_state + d_state)  [Δ, B, C]
+        self.x_proj  = nn.Linear(self.d_inner,
+                                  self.dt_rank + d_state * 2, bias=False)
+
+        # dt_proj: dt_rank → d_inner  (expand low-rank Δ to full width)
+        self.dt_proj = nn.Linear(self.dt_rank, self.d_inner, bias=True)
+
+        # Initialise dt_proj bias → Δ starts uniformly in [dt_min, dt_max]
+        dt_init = torch.exp(
+            torch.rand(self.d_inner) * (math.log(dt_max) - math.log(dt_min))
+            + math.log(dt_min)
+        ).clamp(min=1e-4)
+        # softplus⁻¹ so that softplus(bias) = dt_init
+        inv_dt = dt_init + torch.log(-torch.expm1(-dt_init))
+        self.dt_proj.bias = nn.Parameter(inv_dt)
+        self.dt_proj.bias._no_weight_decay = True
+
+        # A: log-diagonal [d_inner, d_state], fixed structure, negative after exp
+        A = (torch.arange(1, d_state + 1, dtype=torch.float32)
+                  .unsqueeze(0).expand(self.d_inner, -1))
+        self.A_log = nn.Parameter(torch.log(A))
+        self.A_log._no_weight_decay = True
+
+        # D: per-channel skip connection weight
+        self.D = nn.Parameter(torch.ones(self.d_inner))
+        self.D._no_weight_decay = True
+
+        self.out_proj = nn.Linear(self.d_inner, d_model, bias=False)
+        self.dropout  = nn.Dropout(dropout)
+
+    # ── Selective scan ────────────────────────────────────────────────────────
+
+    def _selective_scan(self, u, delta, A, B, C, D):
+        """
+        Pure-PyTorch sequential selective scan.
+        Complexity: O(L · d_inner · d_state)  — LINEAR in sequence length L.
+
+        Args:
+            u     : [B, L, d_inner]     SSM input (after conv + SiLU)
+            delta : [B, L, d_inner]     positive time-step Δ(x)
+            A     : [d_inner, d_state]  negative diagonal (always < 0)
+            B     : [B, L, d_state]     selective input matrix
+            C     : [B, L, d_state]     selective output matrix
+            D     : [d_inner]           skip-connection weights
+        Returns:
+            y     : [B, L, d_inner]
+        """
+        B_b, L, d_inner = u.shape
+
+        # Discretise A and B with zero-order hold (ZOH):
+        #   Ā(t) = exp(Δ(t) ⊗ A)               [B, L, d_inner, d_state]
+        #   B̄·u(t) = (Δ(t) ⊗ B(t)) · u(t)       [B, L, d_inner, d_state]
+        deltaA   = torch.exp(delta.unsqueeze(-1) * A[None, None])  # [B,L,di,ds]
+        deltaB_u = (delta.unsqueeze(-1)           # [B,L,di,1]
+                    * B.unsqueeze(2)              # [B,L,1,ds]
+                    * u.unsqueeze(-1))            # [B,L,di,1]  → [B,L,di,ds]
+
+        # Sequential recurrence — every h(t) carries the full history of x(0..t)
+        h  = u.new_zeros(B_b, d_inner, self.d_state)
+        ys = []
+        for t in range(L):
+            h  = deltaA[:, t] * h + deltaB_u[:, t]      # [B, di, ds]
+            y  = (h * C[:, t, None, :]).sum(-1)          # [B, di]
+            ys.append(y)
+
+        y = torch.stack(ys, dim=1)           # [B, L, d_inner]
+        y = y + u * D[None, None, :]         # skip: D · x(t)
+        return y
+
+    # ─────────────────────────────────────────────────────────────────────────
 
     def forward(self, x):
         """
@@ -71,57 +157,51 @@ class TransformerSequenceBlock(nn.Module):
         Returns:
             [B, L, d_model]
         """
-        B, L, C = x.shape
+        residual = x
+        x = self.norm(x)                               # pre-norm
 
-        # ── Multi-head self-attention (pre-norm) ──────────────────────────
-        h = self.norm1(x)
-        Q = self.q_proj(h).view(B, L, self.n_heads, self.d_head).transpose(1, 2)  # [B,H,L,Dh]
-        K = self.k_proj(h).view(B, L, self.n_heads, self.d_head).transpose(1, 2)
-        V = self.v_proj(h).view(B, L, self.n_heads, self.d_head).transpose(1, 2)
+        # ── Input projection ──────────────────────────────────────────────
+        xz    = self.in_proj(x)                        # [B, L, 2·d_inner]
+        x_ssm, z = xz.chunk(2, dim=-1)                # each [B, L, d_inner]
 
-        attn = torch.matmul(Q, K.transpose(-2, -1)) / self.scale              # [B,H,L,L]
-        attn = torch.softmax(attn, dim=-1)
-        attn = self.attn_drop(attn)
+        # ── Local causal conv ─────────────────────────────────────────────
+        x_conv = self.conv1d(
+            x_ssm.transpose(1, 2)                      # [B, d_inner, L]
+        )[:, :, :x.size(1)]                            # causal trim
+        x_conv = F.silu(x_conv).transpose(1, 2)        # [B, L, d_inner]
 
-        out = torch.matmul(attn, V)                                            # [B,H,L,Dh]
-        out = out.transpose(1, 2).contiguous().view(B, L, C)                  # [B,L,C]
-        x   = x + self.o_proj(out)
+        # ── Selective parameters (all depend on x_conv at each position) ──
+        x_dbl  = self.x_proj(x_conv)                   # [B, L, dt_rank+2·d_state]
+        delta, B_mat, C_mat = x_dbl.split(
+            [self.dt_rank, self.d_state, self.d_state], dim=-1
+        )
+        delta  = F.softplus(self.dt_proj(delta))       # [B, L, d_inner] > 0
 
-        # ── Feed-forward (pre-norm) ───────────────────────────────────────
-        x = x + self.ffn(self.norm2(x))
-        return x
+        A = -torch.exp(self.A_log)                     # [d_inner, d_state] < 0
 
+        # ── Selective scan — O(n), global receptive field ─────────────────
+        y = self._selective_scan(x_conv, delta, A, B_mat, C_mat, self.D)
+
+        # ── Gated output ──────────────────────────────────────────────────
+        y = y * F.silu(z)
+        return residual + self.dropout(self.out_proj(y))
+
+
+# =============================================================================
+# Legacy block — kept for backward compatibility with old checkpoints
+# =============================================================================
 
 class OptimizedMambaBlock(nn.Module):
     """
-    Optimized Mamba Block for temporal sequence modeling.
-    
-    This block processes temporal sequences using a combination of:
-    1. Layer normalization for input stabilization
-    2. Linear projection to expand dimensions
-    3. Depthwise convolution for temporal feature extraction
-    4. Batch normalization for training stability
-    5. Pointwise convolution for feature mixing
-    6. Gated activation mechanism
-    7. Residual connection with learnable scaling
-    
-    Args:
-        d_model (int): Model dimension (input and output feature size)
-        d_conv (int): Convolution kernel size. Default: 7
-        expand (int): Expansion factor for internal dimension. Default: 2
-        dropout (float): Dropout probability. Default: 0.15
-    
-    Shape:
-        - Input: (batch_size, sequence_length, d_model)
-        - Output: (batch_size, sequence_length, d_model)
-    
-    Example:
-        >>> block = OptimizedMambaBlock(d_model=192, d_conv=7, expand=2)
-        >>> x = torch.randn(32, 14, 192)  # batch=32, seq_len=14, features=192
-        >>> output = block(x)
-        >>> print(output.shape)  # torch.Size([32, 14, 192])
+    Legacy gated depthwise-CNN block. NOT a real SSM.
+
+    ⚠  Effective receptive field ≈ d_conv × num_layers (e.g. 7×4 = 28 samples).
+       Cannot learn associations between distant time steps.
+       Use SelectiveMambaBlock for correct Mamba (S6) behaviour.
+
+    Kept for backward compatibility with checkpoints trained with this block.
     """
-    
+
     def __init__(self, d_model, d_conv=7, expand=2, dropout=0.15):
         super().__init__()
         self.d_model = d_model

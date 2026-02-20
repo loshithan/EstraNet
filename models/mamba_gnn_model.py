@@ -22,7 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from .mamba_block import OptimizedMambaBlock, TransformerSequenceBlock
+from .mamba_block import OptimizedMambaBlock, SelectiveMambaBlock
 from .gat_layer import EnhancedGAT
 from .patch_embedding import CNNPatchEmbedding
 
@@ -38,15 +38,15 @@ class OptimizedMambaGNN(nn.Module):
         k_neighbors=8,
         dropout=0.15,      # corrected default (was 0.3)
         use_patch_embed=True,  # False = per-step linear projection over all 700 samples
-        use_transformer=False  # True = replace gated-CNN blocks with real self-attention
+        use_ssm_mamba=False    # True = real S6 selective SSM (O(n)); False = legacy gated CNN
     ):
         super().__init__()
         self.d_model          = d_model
         self.k_neighbors      = k_neighbors
         self.use_patch_embed  = use_patch_embed
-        self.use_transformer  = use_transformer
+        self.use_ssm_mamba    = use_ssm_mamba
 
-        block_type = 'transformer' if use_transformer else 'mamba-cnn'
+        block_type = 'selective-SSM/O(n)' if use_ssm_mamba else 'gated-CNN'
         print(f"Optimized Mamba-GNN:")
         print(f"  d_model: {d_model}, Mamba layers: {mamba_layers}, "
               f"GNN layers: {gnn_layers}, "
@@ -70,12 +70,12 @@ class OptimizedMambaGNN(nn.Module):
         )
         self.input_norm   = nn.LayerNorm(d_model)
 
-        # Temporal modeling — Transformer blocks (global attn) or Mamba-CNN blocks
-        if use_transformer:
-            # n_heads: use 4 heads for d_model=64 (16-dim/head), 8 for d_model>=128
-            n_heads = 4 if d_model <= 64 else 8
+        # Temporal modeling — Real S6 Selective SSM (O(n)) or legacy gated CNN
+        if use_ssm_mamba:
+            # SelectiveMambaBlock: true SSM with global receptive field at O(n) cost
+            # d_state=16 gives 16-dim hidden state per channel; n_heads not needed
             self.mamba_blocks = nn.ModuleList([
-                TransformerSequenceBlock(d_model, n_heads=n_heads, dropout=dropout)
+                SelectiveMambaBlock(d_model, d_state=16, dropout=dropout)
                 for _ in range(mamba_layers)
             ])
         else:
