@@ -329,7 +329,8 @@ def train(args):
         gnn_layers=args.gnn_layers,
         num_classes=256,
         k_neighbors=args.k_neighbors,
-        dropout=args.dropout
+        dropout=args.dropout,
+        use_patch_embed=not args.no_patch_embed
     ).to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -589,7 +590,8 @@ def evaluate(args):
         gnn_layers=args.gnn_layers,
         num_classes=256,
         k_neighbors=args.k_neighbors,
-        dropout=args.dropout
+        dropout=args.dropout,
+        use_patch_embed=not args.no_patch_embed
     ).to(device)
 
     if args.checkpoint_idx > 0:
@@ -674,11 +676,14 @@ def main():
     parser.add_argument('--warmup_steps',  type=int,   default=1000)
 
     # Model
-    parser.add_argument('--d_model',      type=int,   default=64)
-    parser.add_argument('--mamba_layers', type=int,   default=2)
-    parser.add_argument('--gnn_layers',   type=int,   default=2)
-    parser.add_argument('--k_neighbors',  type=int,   default=8)
-    parser.add_argument('--dropout',      type=float, default=0.15)
+    parser.add_argument('--d_model',        type=int,   default=64)
+    parser.add_argument('--mamba_layers',   type=int,   default=2)
+    parser.add_argument('--gnn_layers',     type=int,   default=2)
+    parser.add_argument('--k_neighbors',    type=int,   default=8)
+    parser.add_argument('--dropout',        type=float, default=0.15)
+    parser.add_argument('--no_patch_embed', action='store_true', default=False,
+                        help='Use per-step linear projection over all 700 samples '
+                             'instead of 14-patch CNN embedding.')
 
     # Regularisation
     parser.add_argument('--weight_decay',    type=float, default=0.01)

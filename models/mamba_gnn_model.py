@@ -36,26 +36,31 @@ class OptimizedMambaGNN(nn.Module):
         gnn_layers=2,      # corrected default (was 3)
         num_classes=256,
         k_neighbors=8,
-        dropout=0.15       # corrected default (was 0.3)
+        dropout=0.15,      # corrected default (was 0.3)
+        use_patch_embed=True   # False = per-step linear projection over all 700 samples
     ):
         super().__init__()
-        self.d_model     = d_model
-        self.num_patches = 14
-        self.k_neighbors = k_neighbors
-
-        # FIX: input_scale REMOVED.
-        # Data is normalised to mean≈0 std≈1 before entering the model.
-        # Multiplying by 0.1 was shrinking std to ≈0.1, starving every layer
-        # of signal and causing the flat-loss symptom seen across all runs.
+        self.d_model          = d_model
+        self.k_neighbors      = k_neighbors
+        self.use_patch_embed  = use_patch_embed
 
         print(f"Optimized Mamba-GNN:")
         print(f"  d_model: {d_model}, Mamba layers: {mamba_layers}, "
-              f"GNN layers: {gnn_layers}")
+              f"GNN layers: {gnn_layers}, "
+              f"embed={'patch14' if use_patch_embed else 'linear700'}")
 
-        # CNN patch embedding
-        self.patch_embed  = CNNPatchEmbedding(d_model)
+        if use_patch_embed:
+            # CNN multi-scale embedding → 14 patches
+            self.patch_embed = CNNPatchEmbedding(d_model)
+            self.num_patches = 14
+        else:
+            # Per-step linear projection: each of the 700 raw samples → d_model
+            # This preserves full temporal resolution so Mamba can find the
+            # narrow leakage window that the 14-patch CNN was averaging away.
+            self.step_embed  = nn.Linear(1, d_model)
+            self.num_patches = trace_length
 
-        # Learnable positional encoding
+        # Learnable positional encoding (size set above based on embed mode)
         self.pos_encoding = nn.Parameter(
             torch.randn(1, self.num_patches, d_model) * 0.02
         )
@@ -157,11 +162,16 @@ class OptimizedMambaGNN(nn.Module):
         if x.dim() == 2:
             x = x.unsqueeze(1)   # → [B, 1, L]
 
-        # FIX: no input_scale multiplication here
         # x is already normalised (mean≈0, std≈1) by StandardScaler
 
-        # ── Patch embedding ──────────────────────────────────────────────
-        patches = self.patch_embed(x).transpose(1, 2)  # [B, num_patches, d_model]
+        # ── Embedding ─────────────────────────────────────────────────────
+        if self.use_patch_embed:
+            # CNN multi-scale → 14 patches  [B, d_model, 14] → [B, 14, d_model]
+            patches = self.patch_embed(x).transpose(1, 2)
+        else:
+            # Per-step linear: [B, 1, L] → [B, L, 1] → [B, L, d_model]
+            patches = self.step_embed(x.transpose(1, 2))
+
         patches = patches + self.pos_encoding
         patches = self.input_norm(patches)
 
