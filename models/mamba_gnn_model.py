@@ -21,6 +21,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from torch.utils.checkpoint import checkpoint as grad_checkpoint
 
 from .mamba_block import OptimizedMambaBlock, SelectiveMambaBlock
 from .gat_layer import EnhancedGAT
@@ -188,9 +189,14 @@ class OptimizedMambaGNN(nn.Module):
         patches = self.input_norm(patches)
 
         # ── Temporal modeling (Mamba) ─────────────────────────────────────
+        # Gradient checkpointing: recompute SSM activations during backward
+        # instead of storing 700 × [B, d_inner, d_state] per block (~5 GB).
         h_temp = patches
         for mamba in self.mamba_blocks:
-            h_temp = mamba(h_temp)
+            if self.use_ssm_mamba and self.training:
+                h_temp = grad_checkpoint(mamba, h_temp, use_reentrant=False)
+            else:
+                h_temp = mamba(h_temp)
 
         # ── Graph construction ────────────────────────────────────────────
         adj_matrix = self.build_knn_graph(h_temp)
