@@ -75,6 +75,8 @@ class OptimizedMambaGNN(nn.Module):
         if use_ssm_mamba:
             # SelectiveMambaBlock: true SSM with global receptive field at O(n) cost
             # d_state=16 gives 16-dim hidden state per channel; n_heads not needed
+            # For speed: compile the full model after instantiation with torch.compile()
+            # in the training script (see train_mamba_gnn.py).
             self.mamba_blocks = nn.ModuleList([
                 SelectiveMambaBlock(d_model, d_state=16, dropout=dropout)
                 for _ in range(mamba_layers)

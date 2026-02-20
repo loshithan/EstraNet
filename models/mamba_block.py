@@ -113,39 +113,41 @@ class SelectiveMambaBlock(nn.Module):
 
     def _selective_scan(self, u, delta, A, B, C, D):
         """
-        Pure-PyTorch sequential selective scan.
-        Complexity: O(L · d_inner · d_state)  — LINEAR in sequence length L.
+        Stable per-step selective scan.
+
+        Runs a Python loop over L time steps. Each step allocates only
+        [B, d_inner, d_state] (~2 MB), keeping peak memory small regardless
+        of sequence length when combined with gradient checkpointing.
+
+        Speed: when torch.compile() wraps SelectiveMambaBlock (activated in
+        OptimizedMambaGNN if torch.compile is available), the compiler fuses
+        this loop into a Triton kernel, giving speed close to the native CUDA
+        mamba-ssm kernel without extra packages.
 
         Args:
-            u     : [B, L, d_inner]     SSM input (after conv + SiLU)
-            delta : [B, L, d_inner]     positive time-step Δ(x)
-            A     : [d_inner, d_state]  negative diagonal (always < 0)
-            B     : [B, L, d_state]     selective input matrix
-            C     : [B, L, d_state]     selective output matrix
-            D     : [d_inner]           skip-connection weights
+            u     : [B, L, d_inner]
+            delta : [B, L, d_inner]   positive Δ
+            A     : [d_inner, d_state] negative diagonal
+            B     : [B, L, d_state]
+            C     : [B, L, d_state]
+            D     : [d_inner]
         Returns:
             y     : [B, L, d_inner]
         """
         B_b, L, d_inner = u.shape
-
-        # Sequential recurrence — compute per-step to avoid allocating
-        # full [B, L, d_inner, d_state] tensors (which OOM at B=256, L=700).
-        # Per-step cost: [B, d_inner, d_state] ~ 2 MB  vs  pre-alloc ~1.5 GB.
         h  = u.new_zeros(B_b, d_inner, self.d_state)
         ys = []
         for t in range(L):
-            dt_t = delta[:, t]                                      # [B, di]
-            # ZOH discretisation at step t only:
-            A_bar = torch.exp(dt_t.unsqueeze(-1) * A[None])        # [B, di, ds]
-            dBu   = (dt_t.unsqueeze(-1)                            # [B, di, 1]
-                     * B[:, t, None, :]                            # [B, 1, ds]
-                     * u[:, t, :, None])                           # [B, di, 1]
-            h  = A_bar * h + dBu                                    # [B, di, ds]
-            y  = (h * C[:, t, None, :]).sum(-1)                    # [B, di]
+            dt_t  = delta[:, t]                                  # [B, di]
+            A_bar = torch.exp(dt_t.unsqueeze(-1) * A[None])     # [B, di, ds]
+            dBu   = (dt_t.unsqueeze(-1)                         # [B, di,  1]
+                     * B[:, t, None, :]                         # [B,  1, ds]
+                     * u[:, t, :, None])                        # [B, di, ds]
+            h  = A_bar * h + dBu
+            y  = (h * C[:, t, None, :]).sum(-1)                 # [B, di]
             ys.append(y)
-
-        y = torch.stack(ys, dim=1)           # [B, L, d_inner]
-        y = y + u * D[None, None, :]         # skip: D · x(t)
+        y = torch.stack(ys, dim=1)                               # [B, L, di]
+        y = y + u * D[None, None, :]
         return y
 
     # ─────────────────────────────────────────────────────────────────────────
