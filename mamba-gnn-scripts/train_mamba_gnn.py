@@ -447,10 +447,18 @@ def train(args):
 
     print("\n" + "=" * 80)
     print("Starting training...")
-    print("=" * 80 + "\n")
+    print("=" * 80 + "\n", flush=True)
+
+    if args.use_ssm_mamba:
+        print("⏳ First forward pass will JIT-compile the SSM scan kernel."
+              " This takes ~30–90 s on T4 — output will appear once done.",
+              flush=True)
 
     model.train()
     running_loss = 0.0
+    _step_times  = []          # for ETA estimate
+    import time as _time
+    _t_step_start = _time.time()
 
     while global_step < args.train_steps:
         for batch_idx, (data, target) in enumerate(train_loader):
@@ -477,8 +485,9 @@ def train(args):
                 print(f"output std         : {out_diag.std().item():.4f}")
                 print(f"max prob (first 5) : {max_prob[:5].tolist()}")
                 print(f"uniform baseline   : {1/256:.4f}")
-                print("=== END FIRST BATCH DIAGNOSTIC ===\n")
+                print("=== END FIRST BATCH DIAGNOSTIC ===\n", flush=True)
                 first_batch_done = True
+                _t_step_start = _time.time()   # reset timer after compile
 
             # ── Update LR ─────────────────────────────────────────────────
             current_lr = lr_schedule.get_lr(global_step)
@@ -501,17 +510,34 @@ def train(args):
             running_loss += loss.item()
             global_step  += 1
 
-            # ── Periodic log ──────────────────────────────────────────────
+            # ── High-frequency early prints (steps 1–500) so Colab isn’t silent
+            if global_step <= 500 and global_step % 50 == 0:
+                elapsed = _time.time() - _t_step_start
+                sps     = global_step / max(elapsed, 1e-6)   # steps/sec
+                eta_s   = (args.train_steps - global_step) / max(sps, 1e-6)
+                eta_m   = int(eta_s // 60)
+                print(f"  step {global_step:4d} | loss {loss.item():.4f} "
+                      f"| {sps:.1f} step/s | ETA {eta_m}m", flush=True)
+
+            # ── Periodic log ────────────────────────────────────────────────────────
             if global_step % args.iterations == 0:
+                elapsed = _time.time() - _t_step_start
+                sps     = args.iterations / max(elapsed, 1e-6)
+                eta_s   = (args.train_steps - global_step) / max(sps, 1e-6)
+                eta_m   = int(eta_s // 60)
                 avg_loss = running_loss / args.iterations
-                print(f"[{global_step:6d}] | gnorm {grad_norm:5.2f} "
-                      f"lr {current_lr:9.6f} | loss {avg_loss:>5.2f}")
+                print(f"[{global_step:6d}/{args.train_steps}] "
+                      f"gnorm {grad_norm:5.2f} "
+                      f"lr {current_lr:.6f} "
+                      f"loss {avg_loss:.4f} "
+                      f"| {sps:.1f} step/s  ETA {eta_m}m", flush=True)
                 loss_history[global_step] = {
                     'train_loss': avg_loss,
                     'grad_norm' : grad_norm.item(),
                     'lr'        : current_lr
                 }
-                running_loss = 0.0
+                running_loss  = 0.0
+                _t_step_start = _time.time()
 
             # ── Evaluation ────────────────────────────────────────────────
             if global_step % args.eval_steps == 0 and global_step > 0:
@@ -528,7 +554,7 @@ def train(args):
                         train_eval_loss += criterion(model(d), t).item()
                 train_eval_loss /= train_eval_batches
                 print(f"Train batches[{train_eval_batches:5d}]                "
-                      f"| loss {train_eval_loss:>5.2f}")
+                      f"| loss {train_eval_loss:>5.2f}", flush=True)
 
                 # Attack/eval set
                 eval_loss    = 0.0
@@ -542,7 +568,7 @@ def train(args):
                         eval_batches += 1
                 eval_loss /= eval_batches
                 print(f"Eval  batches[{eval_batches:5d}]                "
-                      f"| loss {eval_loss:>5.2f}")
+                      f"| loss {eval_loss:>5.2f}", flush=True)
 
                 loss_history.setdefault(global_step, {}).update({
                     'train_eval_loss': train_eval_loss,
@@ -559,7 +585,7 @@ def train(args):
                         'model_state_dict' : model.state_dict(),
                         'eval_loss'        : eval_loss
                     }, best_path)
-                    print(f"★ New best model saved (eval_loss: {eval_loss:.2f})")
+                    print(f"★ New best model saved (eval_loss: {eval_loss:.4f})", flush=True)
                     torch.save({'checkpoint_path': best_path}, 
                                os.path.join(args.checkpoint_dir, 'best_model.pth'))
                     # re-save properly
@@ -568,12 +594,12 @@ def train(args):
                         'model_state_dict' : model.state_dict(),
                         'eval_loss'        : eval_loss
                     }, best_path)
-                    print(f"✓ Checkpoint saved: best_model.pth")
+                    print(f"✓ Checkpoint saved: best_model.pth", flush=True)
                 else:
                     patience_counter += 1
                     if args.early_stopping > 0 and patience_counter >= args.early_stopping:
-                        print(f"\n⚠ Early stopping triggered at step {global_step}")
-                        print(f"  Best eval loss: {best_eval_loss:.2f}")
+                        print(f"\n⚠ Early stopping triggered at step {global_step}", flush=True)
+                        print(f"  Best eval loss: {best_eval_loss:.4f}", flush=True)
                         global_step = args.train_steps
                         break
 
@@ -591,7 +617,7 @@ def train(args):
                     'loss_history'     : loss_history
                 }
                 torch.save(state, ckpt_path)
-                print(f"Model saved: {ckpt_path}")
+                print(f"Model saved: {ckpt_path}", flush=True)
                 torch.save(state, os.path.join(args.checkpoint_dir,
                                                'checkpoint_latest.pth'))
 
