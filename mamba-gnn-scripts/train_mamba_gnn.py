@@ -20,9 +20,51 @@ import sys
 import math
 import pickle
 import argparse
+import datetime
 import numpy as np
 import h5py
 from tqdm import tqdm
+
+
+# =============================================================================
+# LOGGING — TeeLogger mirrors every print() to both stdout and a log file
+# =============================================================================
+
+class TeeLogger:
+    """Duplicate stdout writes to a file while keeping console output live."""
+
+    def __init__(self, log_path):
+        self._terminal = sys.stdout
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        self._log = open(log_path, 'w', buffering=1, encoding='utf-8')
+        self.log_path = log_path
+
+    def write(self, message):
+        self._terminal.write(message)
+        self._log.write(message)
+
+    def flush(self):
+        self._terminal.flush()
+        self._log.flush()
+
+    def close(self):
+        if not self._log.closed:
+            self._log.close()
+        sys.stdout = self._terminal
+
+    # Make TeeLogger behave like a real file object
+    def isatty(self):  return False
+    def fileno(self):  return self._terminal.fileno()
+
+
+def setup_logging(log_dir, prefix='mamba_gnn'):
+    """Install TeeLogger and return the path of the log file."""
+    ts       = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_path = os.path.join(log_dir, f'{prefix}_{ts}.log')
+    tee      = TeeLogger(log_path)
+    sys.stdout = tee
+    print(f"Log: {log_path}")
+    return log_path
 
 import torch
 import torch.nn as nn
@@ -334,15 +376,17 @@ def train(args):
         use_ssm_mamba=args.use_ssm_mamba
     ).to(device)
 
-    # torch.compile fuses the per-step SSM scan loop into a Triton kernel on
-    # CUDA (PyTorch 2.0+), giving ~5-10x speedup for the Python-loop scan.
-    # Falls back to eager silently if compile is unavailable or fails.
-    if args.use_ssm_mamba and hasattr(torch, 'compile') and device.type == 'cuda':
-        try:
-            model = torch.compile(model, mode='reduce-overhead')
-            print("✓ torch.compile enabled (Triton-fused SSM scan)")
-        except Exception as e:
-            print(f"⚠  torch.compile skipped ({e}) — using eager mode")
+    # NOTE: torch.compile is applied to the _ssm_scan function at module level
+    # in models/mamba_block.py, NOT to the whole model here.  Compiling the
+    # full model causes a hang when grad_checkpoint is active because the
+    # compiler cannot trace through checkpoint boundaries (see PyTorch issue
+    # #107041).  Per-function compile on the pure-tensor scan avoids this.
+    if args.use_ssm_mamba:
+        from models.mamba_block import _SCAN_COMPILED
+        if _SCAN_COMPILED:
+            print("✓ SSM scan compiled (Triton-fused inner loop, no model-level compile)")
+        else:
+            print("⚠  SSM scan running in eager mode (torch.compile unavailable)")
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel Parameters: {total_params:,}")
@@ -723,7 +767,19 @@ def main():
     parser.add_argument('--result_path',    type=str,
                         default='results/mamba_gnn')
 
+    # Logging
+    parser.add_argument('--log_dir', type=str, default='logs',
+                        help='Directory to write timestamped .log files. '
+                             'Set to empty string to disable file logging.')
+
     args = parser.parse_args()
+
+    # ── Set up file logging (tee stdout → logs/<prefix>_<timestamp>.log) ─────
+    if args.log_dir:
+        # Derive a short prefix from the checkpoint dir name so the log is
+        # self-describing:  e.g. checkpoints/mamba_ssm700 → mamba_ssm700
+        ckpt_name = os.path.basename(args.checkpoint_dir.rstrip('/\\')) or 'mamba_gnn'
+        setup_logging(args.log_dir, prefix=ckpt_name)
 
     # ── Print config ──────────────────────────────────────────────────────
     print("\n" + "=" * 80)

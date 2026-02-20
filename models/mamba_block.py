@@ -22,6 +22,59 @@ import torch.nn.functional as F
 import math
 
 
+# =============================================================================
+# Standalone selective scan — compiled at module level so torch.compile can
+# fuse it into a Triton kernel WITHOUT interfering with grad_checkpoint which
+# wraps the whole SelectiveMambaBlock.forward().  Compiling the full model
+# (torch.compile(model)) causes a hang because the compiler cannot trace
+# through torch.utils.checkpoint boundaries.
+# =============================================================================
+
+def _ssm_scan(u, delta, A, B, C, D):
+    """Pure-function selective scan (no self, no side effects → compilable).
+
+    Args:
+        u     : [B, L, d_inner]
+        delta : [B, L, d_inner]   positive Δ
+        A     : [d_inner, d_state] negative diagonal
+        B     : [B, L, d_state]
+        C     : [B, L, d_state]
+        D     : [d_inner]
+    Returns:
+        y     : [B, L, d_inner]
+    """
+    B_b, L, d_inner = u.shape
+    d_state = B.shape[-1]
+    h = u.new_zeros(B_b, d_inner, d_state)
+    ys = []
+    for t in range(L):
+        dt_t  = delta[:, t]                                  # [B, di]
+        A_bar = torch.exp(dt_t.unsqueeze(-1) * A[None])     # [B, di, ds]
+        dBu   = (dt_t.unsqueeze(-1)                         # [B, di,  1]
+                 * B[:, t, None, :]                         # [B,  1, ds]
+                 * u[:, t, :, None])                        # [B, di, ds]
+        h  = A_bar * h + dBu
+        y  = (h * C[:, t, None, :]).sum(-1)                 # [B, di]
+        ys.append(y)
+    y = torch.stack(ys, dim=1)                               # [B, L, di]
+    y = y + u * D[None, None, :]
+    return y
+
+
+# Compile the inner scan loop only — this is safe because _ssm_scan is a
+# pure tensor function with no checkpoint / autograd hooks around it.
+# fullgraph=False lets the compiler skip any ops it can't fuse.
+_ssm_scan_fn = _ssm_scan
+if hasattr(torch, 'compile'):
+    try:
+        _ssm_scan_fn = torch.compile(_ssm_scan, mode='reduce-overhead', fullgraph=False)
+        _SCAN_COMPILED = True
+    except Exception:
+        _SCAN_COMPILED = False
+else:
+    _SCAN_COMPILED = False
+
+
 class SelectiveMambaBlock(nn.Module):
     """
     Real Mamba block: S6 (Selective State Space Model).
@@ -112,43 +165,8 @@ class SelectiveMambaBlock(nn.Module):
     # ── Selective scan ────────────────────────────────────────────────────────
 
     def _selective_scan(self, u, delta, A, B, C, D):
-        """
-        Stable per-step selective scan.
-
-        Runs a Python loop over L time steps. Each step allocates only
-        [B, d_inner, d_state] (~2 MB), keeping peak memory small regardless
-        of sequence length when combined with gradient checkpointing.
-
-        Speed: when torch.compile() wraps SelectiveMambaBlock (activated in
-        OptimizedMambaGNN if torch.compile is available), the compiler fuses
-        this loop into a Triton kernel, giving speed close to the native CUDA
-        mamba-ssm kernel without extra packages.
-
-        Args:
-            u     : [B, L, d_inner]
-            delta : [B, L, d_inner]   positive Δ
-            A     : [d_inner, d_state] negative diagonal
-            B     : [B, L, d_state]
-            C     : [B, L, d_state]
-            D     : [d_inner]
-        Returns:
-            y     : [B, L, d_inner]
-        """
-        B_b, L, d_inner = u.shape
-        h  = u.new_zeros(B_b, d_inner, self.d_state)
-        ys = []
-        for t in range(L):
-            dt_t  = delta[:, t]                                  # [B, di]
-            A_bar = torch.exp(dt_t.unsqueeze(-1) * A[None])     # [B, di, ds]
-            dBu   = (dt_t.unsqueeze(-1)                         # [B, di,  1]
-                     * B[:, t, None, :]                         # [B,  1, ds]
-                     * u[:, t, :, None])                        # [B, di, ds]
-            h  = A_bar * h + dBu
-            y  = (h * C[:, t, None, :]).sum(-1)                 # [B, di]
-            ys.append(y)
-        y = torch.stack(ys, dim=1)                               # [B, L, di]
-        y = y + u * D[None, None, :]
-        return y
+        """Delegate to module-level _ssm_scan_fn (optionally Triton-compiled)."""
+        return _ssm_scan_fn(u, delta, A, B, C, D)
 
     # ─────────────────────────────────────────────────────────────────────────
 
