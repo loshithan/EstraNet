@@ -553,8 +553,6 @@ def train(args):
                         d, t = d.to(device), t.to(device)
                         train_eval_loss += criterion(model(d), t).item()
                 train_eval_loss /= train_eval_batches
-                print(f"Train batches[{train_eval_batches:5d}]                "
-                      f"| loss {train_eval_loss:>5.2f}", flush=True)
 
                 # Attack/eval set
                 eval_loss    = 0.0
@@ -567,8 +565,14 @@ def train(args):
                         eval_loss    += criterion(model(d), t).item()
                         eval_batches += 1
                 eval_loss /= eval_batches
-                print(f"Eval  batches[{eval_batches:5d}]                "
-                      f"| loss {eval_loss:>5.2f}", flush=True)
+
+                # ── Single combined eval line (matches EstraNet format) ────
+                baseline = 5.545   # ln(256) = random-guess CE
+                marker   = '  ★ best' if eval_loss < best_eval_loss else ''
+                print(f"[{global_step:6d}/{args.train_steps}] "
+                      f"train_loss {train_eval_loss:.4f} | "
+                      f"eval_loss {eval_loss:.4f} "
+                      f"(baseline {baseline:.3f}){marker}", flush=True)
 
                 loss_history.setdefault(global_step, {}).update({
                     'train_eval_loss': train_eval_loss,
