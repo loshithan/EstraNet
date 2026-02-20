@@ -128,20 +128,20 @@ class SelectiveMambaBlock(nn.Module):
         """
         B_b, L, d_inner = u.shape
 
-        # Discretise A and B with zero-order hold (ZOH):
-        #   Ā(t) = exp(Δ(t) ⊗ A)               [B, L, d_inner, d_state]
-        #   B̄·u(t) = (Δ(t) ⊗ B(t)) · u(t)       [B, L, d_inner, d_state]
-        deltaA   = torch.exp(delta.unsqueeze(-1) * A[None, None])  # [B,L,di,ds]
-        deltaB_u = (delta.unsqueeze(-1)           # [B,L,di,1]
-                    * B.unsqueeze(2)              # [B,L,1,ds]
-                    * u.unsqueeze(-1))            # [B,L,di,1]  → [B,L,di,ds]
-
-        # Sequential recurrence — every h(t) carries the full history of x(0..t)
+        # Sequential recurrence — compute per-step to avoid allocating
+        # full [B, L, d_inner, d_state] tensors (which OOM at B=256, L=700).
+        # Per-step cost: [B, d_inner, d_state] ~ 2 MB  vs  pre-alloc ~1.5 GB.
         h  = u.new_zeros(B_b, d_inner, self.d_state)
         ys = []
         for t in range(L):
-            h  = deltaA[:, t] * h + deltaB_u[:, t]      # [B, di, ds]
-            y  = (h * C[:, t, None, :]).sum(-1)          # [B, di]
+            dt_t = delta[:, t]                                      # [B, di]
+            # ZOH discretisation at step t only:
+            A_bar = torch.exp(dt_t.unsqueeze(-1) * A[None])        # [B, di, ds]
+            dBu   = (dt_t.unsqueeze(-1)                            # [B, di, 1]
+                     * B[:, t, None, :]                            # [B, 1, ds]
+                     * u[:, t, :, None])                           # [B, di, 1]
+            h  = A_bar * h + dBu                                    # [B, di, ds]
+            y  = (h * C[:, t, None, :]).sum(-1)                    # [B, di]
             ys.append(y)
 
         y = torch.stack(ys, dim=1)           # [B, L, d_inner]
