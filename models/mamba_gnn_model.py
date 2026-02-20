@@ -22,7 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from .mamba_block import OptimizedMambaBlock
+from .mamba_block import OptimizedMambaBlock, TransformerSequenceBlock
 from .gat_layer import EnhancedGAT
 from .patch_embedding import CNNPatchEmbedding
 
@@ -37,17 +37,21 @@ class OptimizedMambaGNN(nn.Module):
         num_classes=256,
         k_neighbors=8,
         dropout=0.15,      # corrected default (was 0.3)
-        use_patch_embed=True   # False = per-step linear projection over all 700 samples
+        use_patch_embed=True,  # False = per-step linear projection over all 700 samples
+        use_transformer=False  # True = replace gated-CNN blocks with real self-attention
     ):
         super().__init__()
         self.d_model          = d_model
         self.k_neighbors      = k_neighbors
         self.use_patch_embed  = use_patch_embed
+        self.use_transformer  = use_transformer
 
+        block_type = 'transformer' if use_transformer else 'mamba-cnn'
         print(f"Optimized Mamba-GNN:")
         print(f"  d_model: {d_model}, Mamba layers: {mamba_layers}, "
               f"GNN layers: {gnn_layers}, "
-              f"embed={'patch14' if use_patch_embed else 'linear700'}")
+              f"embed={'patch14' if use_patch_embed else 'linear700'}, "
+              f"block={block_type}")
 
         if use_patch_embed:
             # CNN multi-scale embedding → 14 patches
@@ -66,11 +70,19 @@ class OptimizedMambaGNN(nn.Module):
         )
         self.input_norm   = nn.LayerNorm(d_model)
 
-        # Temporal modeling — Mamba blocks
-        self.mamba_blocks = nn.ModuleList([
-            OptimizedMambaBlock(d_model, dropout=dropout)
-            for _ in range(mamba_layers)
-        ])
+        # Temporal modeling — Transformer blocks (global attn) or Mamba-CNN blocks
+        if use_transformer:
+            # n_heads: use 4 heads for d_model=64 (16-dim/head), 8 for d_model>=128
+            n_heads = 4 if d_model <= 64 else 8
+            self.mamba_blocks = nn.ModuleList([
+                TransformerSequenceBlock(d_model, n_heads=n_heads, dropout=dropout)
+                for _ in range(mamba_layers)
+            ])
+        else:
+            self.mamba_blocks = nn.ModuleList([
+                OptimizedMambaBlock(d_model, dropout=dropout)
+                for _ in range(mamba_layers)
+            ])
 
         # Spatial modeling — GAT layers
         self.gnn_layers = nn.ModuleList([

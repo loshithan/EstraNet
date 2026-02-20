@@ -15,6 +15,81 @@ Key Features:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
+
+
+class TransformerSequenceBlock(nn.Module):
+    """
+    Standard Transformer encoder block: Multi-Head Self-Attention + FFN.
+
+    Unlike the gated depthwise-CNN block (OptimizedMambaBlock), this has
+    *global* receptive field — every position attends to every other position.
+    This is exactly what EstraNet's transformer uses and why it can locate the
+    narrow AES leakage window anywhere in 700 samples.
+
+    Args:
+        d_model   (int): Feature dimension.
+        n_heads   (int): Number of attention heads. Default: 8
+        ffn_mult  (int): FFN hidden = d_model * ffn_mult. Default: 4
+        dropout (float): Dropout on attention weights and FFN. Default: 0.1
+    """
+
+    def __init__(self, d_model, n_heads=8, ffn_mult=4, dropout=0.1):
+        super().__init__()
+        assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
+        self.d_model  = d_model
+        self.n_heads  = n_heads
+        self.d_head   = d_model // n_heads
+        self.scale    = math.sqrt(self.d_head)
+
+        # Self-attention projections
+        self.q_proj = nn.Linear(d_model, d_model, bias=False)
+        self.k_proj = nn.Linear(d_model, d_model, bias=False)
+        self.v_proj = nn.Linear(d_model, d_model, bias=False)
+        self.o_proj = nn.Linear(d_model, d_model, bias=False)
+
+        self.attn_drop = nn.Dropout(dropout)
+
+        # Feed-forward network
+        ffn_hidden = d_model * ffn_mult
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, ffn_hidden),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(ffn_hidden, d_model),
+            nn.Dropout(dropout),
+        )
+
+        # Layer norms (pre-norm variant — more stable)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+
+    def forward(self, x):
+        """
+        Args:
+            x: [B, L, d_model]
+        Returns:
+            [B, L, d_model]
+        """
+        B, L, C = x.shape
+
+        # ── Multi-head self-attention (pre-norm) ──────────────────────────
+        h = self.norm1(x)
+        Q = self.q_proj(h).view(B, L, self.n_heads, self.d_head).transpose(1, 2)  # [B,H,L,Dh]
+        K = self.k_proj(h).view(B, L, self.n_heads, self.d_head).transpose(1, 2)
+        V = self.v_proj(h).view(B, L, self.n_heads, self.d_head).transpose(1, 2)
+
+        attn = torch.matmul(Q, K.transpose(-2, -1)) / self.scale              # [B,H,L,L]
+        attn = torch.softmax(attn, dim=-1)
+        attn = self.attn_drop(attn)
+
+        out = torch.matmul(attn, V)                                            # [B,H,L,Dh]
+        out = out.transpose(1, 2).contiguous().view(B, L, C)                  # [B,L,C]
+        x   = x + self.o_proj(out)
+
+        # ── Feed-forward (pre-norm) ───────────────────────────────────────
+        x = x + self.ffn(self.norm2(x))
+        return x
 
 
 class OptimizedMambaBlock(nn.Module):

@@ -330,7 +330,8 @@ def train(args):
         num_classes=256,
         k_neighbors=args.k_neighbors,
         dropout=args.dropout,
-        use_patch_embed=not args.no_patch_embed
+        use_patch_embed=not args.no_patch_embed,
+        use_transformer=args.use_transformer
     ).to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -591,7 +592,8 @@ def evaluate(args):
         num_classes=256,
         k_neighbors=args.k_neighbors,
         dropout=args.dropout,
-        use_patch_embed=not args.no_patch_embed
+        use_patch_embed=not args.no_patch_embed,
+        use_transformer=args.use_transformer
     ).to(device)
 
     if args.checkpoint_idx > 0:
@@ -684,6 +686,9 @@ def main():
     parser.add_argument('--no_patch_embed', action='store_true', default=False,
                         help='Use per-step linear projection over all 700 samples '
                              'instead of 14-patch CNN embedding.')
+    parser.add_argument('--use_transformer', action='store_true', default=False,
+                        help='Replace gated-CNN blocks with real multi-head '
+                             'self-attention (global receptive field over all tokens).')
 
     # Regularisation
     parser.add_argument('--weight_decay',    type=float, default=0.01)
