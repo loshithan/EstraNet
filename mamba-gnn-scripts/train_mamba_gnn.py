@@ -672,7 +672,6 @@ def evaluate(args):
         dropout=args.dropout,
         use_patch_embed=not args.no_patch_embed,
         use_ssm_mamba=args.use_ssm_mamba,
-        ssm_d_state=args.d_state,
         ssm_d_state=args.d_state
     ).to(device)
 
