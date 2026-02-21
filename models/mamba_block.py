@@ -67,7 +67,11 @@ def _ssm_scan(u, delta, A, B, C, D):
 _ssm_scan_fn = _ssm_scan
 if hasattr(torch, 'compile'):
     try:
-        _ssm_scan_fn = torch.compile(_ssm_scan, mode='reduce-overhead', fullgraph=False)
+        # 'default' mode uses Triton kernels WITHOUT CUDAGraphs.
+        # 'reduce-overhead' uses CUDAGraphs which replays fixed memory buffers,
+        # causing "overwritten by a subsequent run" when the scan output tensor
+        # is reused across training steps (RuntimeError from clip_grad_norm_).
+        _ssm_scan_fn = torch.compile(_ssm_scan, mode='default', fullgraph=False)
         _SCAN_COMPILED = True
     except Exception:
         _SCAN_COMPILED = False
