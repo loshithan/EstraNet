@@ -395,6 +395,9 @@ def train(args):
     )
 
     # ── LR schedule ───────────────────────────────────────────────────────
+    # When --reset_lr_schedule is used with --warm_start, the cosine curve
+    # runs over the REMAINING steps (train_steps - warmstart_step) so the
+    # fine-tune phase starts at full max_lr rather than at a decayed value.
     lr_schedule = CosineLRSchedule(
         max_lr=args.learning_rate,
         train_steps=args.train_steps,
@@ -431,15 +434,35 @@ def train(args):
     first_batch_done = False   # flag for one-time diagnostics
 
     # ── Optional warm start ───────────────────────────────────────────────
+    _warmstart_step = 0                 # original step (for LR schedule reset)
     if args.warm_start:
         ckpt_path = os.path.join(args.checkpoint_dir, 'checkpoint_latest.pth')
         if os.path.exists(ckpt_path):
             print(f"\nRestoring from: {ckpt_path}")
             checkpoint = torch.load(ckpt_path, map_location=device)
             model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+            if args.reset_optimizer:
+                print("  ⚠ --reset_optimizer: discarding old Adam state (fresh momentum/variance)")
+            else:
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
             global_step = checkpoint['global_step']
+            _warmstart_step = global_step          # remember for LR offset
             print(f"Resumed from step {global_step}")
+
+            if args.reset_lr_schedule:
+                remaining = args.train_steps - global_step
+                # Re-create schedule for REMAINING steps only.
+                # get_lr(virtual_step) will be called with virtual_step = global_step - _warmstart_step
+                lr_schedule = CosineLRSchedule(
+                    max_lr=args.learning_rate,
+                    train_steps=remaining,
+                    warmup_steps=min(args.warmup_steps, remaining // 4),
+                    min_lr_ratio=args.min_lr_ratio
+                )
+                print(f"  ✓ --reset_lr_schedule: cosine LR will run fresh over "
+                      f"{remaining} remaining steps (LR starts at {args.learning_rate})")
 
     print("\n" + "=" * 80)
     print("Starting training...")
@@ -482,7 +505,13 @@ def train(args):
                 _t_step_start = _time.time()   # reset timer after compile
 
             # ── Update LR ─────────────────────────────────────────────────
-            current_lr = lr_schedule.get_lr(global_step)
+            # With --reset_lr_schedule, map global_step → virtual step starting
+            # from 0 at the warm-start point, so cosine curve is fresh.
+            if args.reset_lr_schedule and _warmstart_step > 0:
+                virtual_step = global_step - _warmstart_step
+                current_lr = lr_schedule.get_lr(virtual_step)
+            else:
+                current_lr = lr_schedule.get_lr(global_step)
             for pg in optimizer.param_groups:
                 pg['lr'] = current_lr
 
@@ -584,15 +613,6 @@ def train(args):
                         'eval_loss'        : eval_loss
                     }, best_path)
                     print(f"★ New best model saved (eval_loss: {eval_loss:.4f})", flush=True)
-                    torch.save({'checkpoint_path': best_path}, 
-                               os.path.join(args.checkpoint_dir, 'best_model.pth'))
-                    # re-save properly
-                    torch.save({
-                        'global_step'      : global_step,
-                        'model_state_dict' : model.state_dict(),
-                        'eval_loss'        : eval_loss
-                    }, best_path)
-                    print(f"✓ Checkpoint saved: best_model.pth", flush=True)
                 else:
                     patience_counter += 1
                     if args.early_stopping > 0 and patience_counter >= args.early_stopping:
@@ -792,6 +812,14 @@ def main():
     parser.add_argument('--checkpoint_dir', type=str, required=True)
     parser.add_argument('--checkpoint_idx', type=int, default=0)
     parser.add_argument('--warm_start',     action='store_true')
+    parser.add_argument('--reset_lr_schedule', action='store_true', default=False,
+                        help='Reset cosine LR schedule to start fresh from warm-start step. '
+                             'Without this, the schedule position is based on global_step, '
+                             'so continuing from step 50000 of 75000 starts at ~25%% of max_lr. '
+                             'With this flag, LR starts at max_lr and decays over remaining steps.')
+    parser.add_argument('--reset_optimizer', action='store_true', default=False,
+                        help='Discard optimizer state from checkpoint (momentum/variance). '
+                             'Recommended when switching loss functions (e.g. CE → Focal).')
     parser.add_argument('--result_path',    type=str,
                         default='results/mamba_gnn')
 

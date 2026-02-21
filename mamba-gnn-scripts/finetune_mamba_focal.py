@@ -25,19 +25,45 @@ import torch
 
 # ----------------------------------------------------------------------------
 def infer_arch_from_state(msd: dict):
+    """Infer full architecture from checkpoint state_dict keys/shapes.
+
+    Returns dict with: d_model, mamba_layers, gnn_layers,
+                       use_ssm_mamba, use_patch_embed, d_state
+    """
     # infer d_model from classifier or pos_encoding
     if 'classifier.0.weight' in msd:
-        d_model = msd['classifier.0.weight'].shape[1]
+        d_model = int(msd['classifier.0.weight'].shape[1])
     elif 'pos_encoding' in msd:
-        # pos_encoding: (1, seq_len, d_model)
-        d_model = msd['pos_encoding'].shape[2]
+        d_model = int(msd['pos_encoding'].shape[2])
     else:
         raise RuntimeError('Cannot infer d_model from state_dict')
 
     # infer mamba_layers and gnn_layers by checking keys
     mamba_layers = len({k.split('.')[1] for k in msd.keys() if k.startswith('mamba_blocks.')})
     gnn_layers = len({k.split('.')[1] for k in msd.keys() if k.startswith('gnn_layers.')})
-    return int(d_model), max(1, mamba_layers), max(1, gnn_layers)
+    # NOTE: gnn_layers=0 is valid (SSM-only model) — do NOT clamp to min 1
+
+    # detect SSM vs legacy: SelectiveMambaBlock has A_log; OptimizedMambaBlock has conv_norm
+    use_ssm_mamba = any('A_log' in k for k in msd.keys())
+
+    # detect embedding: step_embed.weight → linear 700; patch_embed.* → CNN 14-patch
+    use_patch_embed = any(k.startswith('patch_embed.') for k in msd.keys())
+
+    # infer d_state from A_log shape: [d_inner, d_state]
+    d_state = 16  # default fallback
+    for k, v in msd.items():
+        if k.endswith('.A_log') and hasattr(v, 'shape') and len(v.shape) == 2:
+            d_state = int(v.shape[1])
+            break
+
+    return {
+        'd_model': d_model,
+        'mamba_layers': max(1, mamba_layers),
+        'gnn_layers': gnn_layers,         # allow 0
+        'use_ssm_mamba': use_ssm_mamba,
+        'use_patch_embed': use_patch_embed,
+        'd_state': d_state,
+    }
 
 
 # ----------------------------------------------------------------------------
@@ -82,6 +108,24 @@ def build_train_command(cfg: dict) -> str:
         f"--dropout={cfg['dropout']}",
     ]
 
+    # SSM / embedding flags — MUST match the checkpoint architecture
+    if cfg.get('use_ssm_mamba'):
+        parts.append('--use_ssm_mamba')
+    if not cfg.get('use_patch_embed', True):
+        parts.append('--no_patch_embed')
+    if cfg.get('d_state') is not None:
+        parts.append(f"--d_state={cfg['d_state']}")
+    if cfg.get('early_stopping') is not None:
+        parts.append(f"--early_stopping={cfg['early_stopping']}")
+    if cfg.get('warmup_steps') is not None:
+        parts.append(f"--warmup_steps={cfg['warmup_steps']}")
+
+    # Reset flags for fine-tuning
+    if cfg.get('reset_lr_schedule'):
+        parts.append('--reset_lr_schedule')
+    if cfg.get('reset_optimizer'):
+        parts.append('--reset_optimizer')
+
     if cfg.get('weight_decay') is not None:
         parts.append(f"--weight_decay={cfg['weight_decay']}")
     if cfg.get('augment_noise') is not None:
@@ -118,6 +162,28 @@ def main():
     p.add_argument('--data_path', type=str, default='data/ASCAD.h5')
     p.add_argument('--dry_run', action='store_true')
 
+    # Architecture override (auto-detected from checkpoint if not given)
+    p.add_argument('--no_patch_embed', action='store_true', default=None,
+                   help='Override: per-step linear (auto-detected from ckpt)')
+    p.add_argument('--use_ssm_mamba', action='store_true', default=None,
+                   help='Override: real S6 SSM (auto-detected from ckpt)')
+    p.add_argument('--d_state', type=int, default=None,
+                   help='Override: SSM state dim (auto-detected from ckpt)')
+
+    # Fine-tune specific
+    p.add_argument('--early_stopping', type=int, default=0,
+                   help='Patience in eval periods. 0 = disabled.')
+    p.add_argument('--warmup_steps', type=int, default=500,
+                   help='LR warmup steps for fine-tune phase (default: 500)')
+    p.add_argument('--reset_lr_schedule', action='store_true', default=True,
+                   help='Reset cosine LR to start fresh from warm-start step (default: True)')
+    p.add_argument('--no_reset_lr_schedule', dest='reset_lr_schedule', action='store_false',
+                   help='Keep original cosine schedule position')
+    p.add_argument('--reset_optimizer', action='store_true', default=True,
+                   help='Discard old optimizer state (default: True — recommended when switching loss)')
+    p.add_argument('--no_reset_optimizer', dest='reset_optimizer', action='store_false',
+                   help='Keep old Adam momentum/variance buffers')
+
     args = p.parse_args()
 
     src = Path(args.source_ckpt)
@@ -136,11 +202,23 @@ def main():
     # determine architecture from state_dict
     msd = ck.get('model_state_dict') or ck
     try:
-        d_model, mamba_layers, gnn_layers = infer_arch_from_state(msd)
-        print(f"Inferred arch -> d_model={d_model}, mamba_layers={mamba_layers}, gnn_layers={gnn_layers}")
+        arch = infer_arch_from_state(msd)
+        print(f"Inferred arch -> d_model={arch['d_model']}, "
+              f"mamba_layers={arch['mamba_layers']}, gnn_layers={arch['gnn_layers']}, "
+              f"ssm={arch['use_ssm_mamba']}, patch_embed={arch['use_patch_embed']}, "
+              f"d_state={arch['d_state']}")
     except Exception as e:
-        print('⚠ Could not infer architecture from checkpoint — using defaults (d_model=64,mamba=2,gnn=2)')
-        d_model, mamba_layers, gnn_layers = 64, 2, 2
+        print(f'⚠ Could not infer architecture from checkpoint ({e}) — using defaults')
+        arch = {'d_model': 64, 'mamba_layers': 2, 'gnn_layers': 2,
+                'use_ssm_mamba': False, 'use_patch_embed': True, 'd_state': 16}
+
+    # CLI overrides take precedence over auto-detection
+    d_model      = arch['d_model']
+    mamba_layers = arch['mamba_layers']
+    gnn_layers   = arch['gnn_layers']
+    use_ssm      = args.use_ssm_mamba if args.use_ssm_mamba is not None else arch['use_ssm_mamba']
+    use_patch    = not args.no_patch_embed if args.no_patch_embed is not None else arch['use_patch_embed']
+    d_state      = args.d_state if args.d_state is not None else arch['d_state']
 
     # compute total train_steps
     if args.train_steps is None:
@@ -169,6 +247,14 @@ def main():
         'weight_decay': args.weight_decay,
         'augment_noise': args.augment_noise,
         'augment_shift': args.augment_shift,
+        # SSM / embed flags (auto-detected or overridden)
+        'use_ssm_mamba': use_ssm,
+        'use_patch_embed': use_patch,
+        'd_state': d_state,
+        'early_stopping': args.early_stopping,
+        'warmup_steps': args.warmup_steps,
+        'reset_lr_schedule': args.reset_lr_schedule,
+        'reset_optimizer': args.reset_optimizer,
     }
 
     train_cmd = build_train_command(cfg)
@@ -179,6 +265,11 @@ def main():
     print(f"  focal_gamma       : {args.focal_gamma}")
     print(f"  train batch size  : {args.train_batch_size}")
     print(f"  checkpoint target : {tgt}")
+    print(f"  use_ssm_mamba     : {use_ssm}")
+    print(f"  use_patch_embed   : {use_patch}")
+    print(f"  d_state           : {d_state}")
+    print(f"  reset_lr_schedule : {args.reset_lr_schedule}")
+    print(f"  reset_optimizer   : {args.reset_optimizer}")
     print('  (label_smoothing forced to 0.0 for FocalLoss)')
     print('===============================\n')
 

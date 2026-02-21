@@ -1,0 +1,3 @@
+Log: logs\test_smoke_20260220_223452.log
+Step    500 | gnorm  0.87  lr  0.000250 | loss  5.41
+Step   1000 | gnorm  0.92  lr  0.000250 | loss  5.38
