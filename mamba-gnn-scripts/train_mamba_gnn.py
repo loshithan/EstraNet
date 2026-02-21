@@ -498,7 +498,11 @@ def train(args):
             optimizer.zero_grad()
             output = model(data)
             loss   = criterion(output, target)
+            if global_step == 0:
+                print("⏳ Compiling backward pass (Triton) — silent for 3–10 min on T4, please wait...", flush=True)
             loss.backward()
+            if global_step == 0:
+                print("✓ Backward compiled. Training starts now.", flush=True)
 
             # FIX: use args.clip (not hardcoded value)
             grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -510,8 +514,10 @@ def train(args):
             running_loss += loss.item()
             global_step  += 1
 
-            # ── High-frequency early prints (steps 1–500) so Colab isn’t silent
-            if global_step <= 500 and global_step % 50 == 0:
+            # ── High-frequency early prints so Colab isn't silent
+            # every 10 steps for first 100, then every 50 up to step 500
+            _early_freq = 10 if global_step <= 100 else 50
+            if global_step <= 500 and global_step % _early_freq == 0:
                 elapsed = _time.time() - _t_step_start
                 sps     = global_step / max(elapsed, 1e-6)   # steps/sec
                 eta_s   = (args.train_steps - global_step) / max(sps, 1e-6)
