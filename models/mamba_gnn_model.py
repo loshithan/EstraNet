@@ -39,7 +39,8 @@ class OptimizedMambaGNN(nn.Module):
         k_neighbors=8,
         dropout=0.15,      # corrected default (was 0.3)
         use_patch_embed=True,  # False = per-step linear projection over all 700 samples
-        use_ssm_mamba=False    # True = real S6 selective SSM (O(n)); False = legacy gated CNN
+        use_ssm_mamba=False,   # True = real S6 selective SSM (O(n)); False = legacy gated CNN
+        ssm_d_state=8          # SSM hidden state dim: 8=fast (0.73 GB/block), 16=slow (1.47 GB/block)
     ):
         super().__init__()
         self.d_model          = d_model
@@ -73,12 +74,11 @@ class OptimizedMambaGNN(nn.Module):
 
         # Temporal modeling — Real S6 Selective SSM (O(n)) or legacy gated CNN
         if use_ssm_mamba:
-            # SelectiveMambaBlock: true SSM with global receptive field at O(n) cost
-            # d_state=16 gives 16-dim hidden state per channel; n_heads not needed
-            # For speed: compile the full model after instantiation with torch.compile()
-            # in the training script (see train_mamba_gnn.py).
+            # d_state controls hidden state dimension; scan tensor size = [B,L,d_inner,d_state].
+            # d_state=8  → 0.73 GB/block  (~2x faster than 16)
+            # d_state=16 → 1.47 GB/block  (original, slow due to ~120 GB memcpy/step)
             self.mamba_blocks = nn.ModuleList([
-                SelectiveMambaBlock(d_model, d_state=16, dropout=dropout)
+                SelectiveMambaBlock(d_model, d_state=ssm_d_state, dropout=dropout)
                 for _ in range(mamba_layers)
             ])
         else:

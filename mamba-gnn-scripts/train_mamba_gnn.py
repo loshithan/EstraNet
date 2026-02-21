@@ -373,7 +373,8 @@ def train(args):
         k_neighbors=args.k_neighbors,
         dropout=args.dropout,
         use_patch_embed=not args.no_patch_embed,
-        use_ssm_mamba=args.use_ssm_mamba
+        use_ssm_mamba=args.use_ssm_mamba,
+        ssm_d_state=args.d_state
     ).to(device)
 
     # NOTE: torch.compile is applied to the _ssm_scan function at module level
@@ -670,7 +671,9 @@ def evaluate(args):
         k_neighbors=args.k_neighbors,
         dropout=args.dropout,
         use_patch_embed=not args.no_patch_embed,
-        use_ssm_mamba=args.use_ssm_mamba
+        use_ssm_mamba=args.use_ssm_mamba,
+        ssm_d_state=args.d_state,
+        ssm_d_state=args.d_state
     ).to(device)
 
     if args.checkpoint_idx > 0:
@@ -760,6 +763,9 @@ def main():
     parser.add_argument('--gnn_layers',     type=int,   default=2)
     parser.add_argument('--k_neighbors',    type=int,   default=8)
     parser.add_argument('--dropout',        type=float, default=0.15)
+    parser.add_argument('--d_state',        type=int,   default=8,
+                        help='SSM hidden state dim. 8=fast (0.73 GB/block), '
+                             '16=slow (1.47 GB/block). Default: 8.')
     parser.add_argument('--no_patch_embed', action='store_true', default=False,
                         help='Use per-step linear projection over all 700 samples '
                              'instead of 14-patch CNN embedding.')
