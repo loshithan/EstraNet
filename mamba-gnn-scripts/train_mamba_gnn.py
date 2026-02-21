@@ -374,7 +374,8 @@ def train(args):
         dropout=args.dropout,
         use_patch_embed=not args.no_patch_embed,
         use_ssm_mamba=args.use_ssm_mamba,
-        ssm_d_state=args.d_state
+        ssm_d_state=args.d_state,
+        stride_embed=args.stride_embed
     ).to(device)
 
     # NOTE: torch.compile is applied to the _ssm_scan function at module level
@@ -692,7 +693,8 @@ def evaluate(args):
         dropout=args.dropout,
         use_patch_embed=not args.no_patch_embed,
         use_ssm_mamba=args.use_ssm_mamba,
-        ssm_d_state=args.d_state
+        ssm_d_state=args.d_state,
+        stride_embed=args.stride_embed
     ).to(device)
 
     if args.checkpoint_idx > 0:
@@ -791,6 +793,11 @@ def main():
     parser.add_argument('--use_ssm_mamba', action='store_true', default=False,
                         help='Use real S6 Selective SSM (O(n) complexity, global '
                              'receptive field) instead of legacy gated-CNN blocks.')
+    parser.add_argument('--stride_embed', action='store_true', default=False,
+                        help='Use strided window projection (700→50 non-overlapping windows '
+                             'of 14 samples, learned Linear — NO averaging). '
+                             'Preserves leakage samples; SSM runs over 50 steps. '
+                             'Requires --no_patch_embed. Preferred for SCA tasks.')
 
     # Regularisation
     parser.add_argument('--weight_decay',    type=float, default=0.01)

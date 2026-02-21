@@ -46,8 +46,10 @@ def infer_arch_from_state(msd: dict):
     # detect SSM vs legacy: SelectiveMambaBlock has A_log; OptimizedMambaBlock has conv_norm
     use_ssm_mamba = any('A_log' in k for k in msd.keys())
 
-    # detect embedding: step_embed.weight → linear 700; patch_embed.* → CNN 14-patch
+    # detect embedding mode
     use_patch_embed = any(k.startswith('patch_embed.') for k in msd.keys())
+    # stride_embed detected by presence of stride_proj weight
+    stride_embed    = any(k.startswith('stride_proj.') for k in msd.keys())
 
     # infer d_state from A_log shape: [d_inner, d_state]
     d_state = 16  # default fallback
@@ -62,6 +64,7 @@ def infer_arch_from_state(msd: dict):
         'gnn_layers': gnn_layers,         # allow 0
         'use_ssm_mamba': use_ssm_mamba,
         'use_patch_embed': use_patch_embed,
+        'stride_embed': stride_embed,
         'd_state': d_state,
     }
 
@@ -113,6 +116,8 @@ def build_train_command(cfg: dict) -> str:
         parts.append('--use_ssm_mamba')
     if not cfg.get('use_patch_embed', True):
         parts.append('--no_patch_embed')
+    if cfg.get('stride_embed'):
+        parts.append('--stride_embed')
     if cfg.get('d_state') is not None:
         parts.append(f"--d_state={cfg['d_state']}")
     if cfg.get('early_stopping') is not None:

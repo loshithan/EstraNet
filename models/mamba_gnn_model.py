@@ -38,33 +38,53 @@ class OptimizedMambaGNN(nn.Module):
         num_classes=256,
         k_neighbors=8,
         dropout=0.15,      # corrected default (was 0.3)
-        use_patch_embed=True,  # False = per-step linear projection over all 700 samples
+        use_patch_embed=True,  # False = per-step linear projection OR stride_embed
         use_ssm_mamba=False,   # True = real S6 selective SSM (O(n)); False = legacy gated CNN
-        ssm_d_state=8          # SSM hidden state dim: 8=fast (0.73 GB/block), 16=slow (1.47 GB/block)
+        ssm_d_state=8,         # SSM hidden state dim: 8=fast, 16=richer
+        stride_embed=False,    # True = 700→50 tokens via 14-sample window projection (no averaging)
+                               # Avoids CNN avg-pooling that washes out narrow leakage spikes.
+                               # Preferred over use_patch_embed=True for SCA tasks.
+        stride_window=14       # window size for stride_embed: trace_length must be divisible
     ):
         super().__init__()
         self.d_model          = d_model
         self.k_neighbors      = k_neighbors
         self.use_patch_embed  = use_patch_embed
         self.use_ssm_mamba    = use_ssm_mamba
+        self.stride_embed     = stride_embed
+        self.stride_window    = stride_window
 
         block_type = 'selective-SSM/O(n)' if use_ssm_mamba else 'gated-CNN'
-        print(f"Optimized Mamba-GNN:")
-        print(f"  d_model: {d_model}, Mamba layers: {mamba_layers}, "
-              f"GNN layers: {gnn_layers}, "
-              f"embed={'patch14' if use_patch_embed else 'linear700'}, "
-              f"block={block_type}")
 
-        if use_patch_embed:
+        if stride_embed and not use_patch_embed:
+            # ── Strided window projection (RECOMMENDED for SSM + SCA) ────────────────
+            # 700 samples → 50 non-overlapping windows of 14 samples each
+            # A learned Linear(14, d_model) projects each window independently.
+            # ✔ NO averaging — all 14 raw sample values are visible to the projector
+            # ✔ 50 tokens   — SSM scan tensor [B,50,d_inner,d_state] is small & fast
+            # ✔ Leakage preserved — samples within the leakage cycle stay in one window
+            assert trace_length % stride_window == 0, (
+                f"trace_length ({trace_length}) must be divisible by stride_window ({stride_window})"
+            )
+            self.num_patches    = trace_length // stride_window   # 700//14 = 50
+            self.stride_proj    = nn.Linear(stride_window, d_model)
+            embed_label = f'stride{self.num_patches}'
+        elif use_patch_embed:
             # CNN multi-scale embedding → 14 patches
+            # ⚠ AdaptiveAvgPool averages each 50-sample block — may dilute narrow leakage
             self.patch_embed = CNNPatchEmbedding(d_model)
             self.num_patches = 14
+            embed_label = 'cnn-patch14(avg)'
         else:
             # Per-step linear projection: each of the 700 raw samples → d_model
-            # This preserves full temporal resolution so Mamba can find the
-            # narrow leakage window that the 14-patch CNN was averaging away.
+            # Full temporal resolution, but 700 SSM steps makes training slow.
             self.step_embed  = nn.Linear(1, d_model)
             self.num_patches = trace_length
+            embed_label = f'linear{trace_length}'
+
+        print(f"Optimized Mamba-GNN:")
+        print(f"  d_model: {d_model}, Mamba layers: {mamba_layers}, "
+              f"GNN layers: {gnn_layers}, embed={embed_label}, block={block_type}")
 
         # Learnable positional encoding (size set above based on embed mode)
         self.pos_encoding = nn.Parameter(
@@ -180,7 +200,13 @@ class OptimizedMambaGNN(nn.Module):
         # x is already normalised (mean≈0, std≈1) by StandardScaler
 
         # ── Embedding ─────────────────────────────────────────────────────
-        if self.use_patch_embed:
+        if self.stride_embed and not self.use_patch_embed:
+            # Strided window projection: 700 → 50 non-overlapping windows of 14
+            # [B, 1, L] → [B, L] → [B, num_patches, stride_window] → [B, N, d_model]
+            B_b = x.size(0)
+            patches = x.squeeze(1).view(B_b, self.num_patches, self.stride_window)
+            patches = self.stride_proj(patches)           # learned — no averaging
+        elif self.use_patch_embed:
             # CNN multi-scale → 14 patches  [B, d_model, 14] → [B, 14, d_model]
             patches = self.patch_embed(x).transpose(1, 2)
         else:
