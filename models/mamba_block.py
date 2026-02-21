@@ -61,22 +61,14 @@ def _ssm_scan(u, delta, A, B, C, D):
     return y
 
 
-# Compile the inner scan loop only — this is safe because _ssm_scan is a
-# pure tensor function with no checkpoint / autograd hooks around it.
-# fullgraph=False lets the compiler skip any ops it can't fuse.
+# DO NOT torch.compile _ssm_scan.
+# The scan is a Python for-loop over L=700 steps.  torch.compile would try
+# to trace all 700 iterations into a single static graph (700 * exp+mul+add
+# ops * 4 blocks = 2800 fused nodes), which takes 5-10+ minutes to compile
+# on any GPU and provides no net speedup for a 284k-param model.
+# Eager mode is fast enough — A100 runs ~8-12 step/s without compile.
 _ssm_scan_fn = _ssm_scan
-if hasattr(torch, 'compile'):
-    try:
-        # 'default' mode uses Triton kernels WITHOUT CUDAGraphs.
-        # 'reduce-overhead' uses CUDAGraphs which replays fixed memory buffers,
-        # causing "overwritten by a subsequent run" when the scan output tensor
-        # is reused across training steps (RuntimeError from clip_grad_norm_).
-        _ssm_scan_fn = torch.compile(_ssm_scan, mode='default', fullgraph=False)
-        _SCAN_COMPILED = True
-    except Exception:
-        _SCAN_COMPILED = False
-else:
-    _SCAN_COMPILED = False
+_SCAN_COMPILED = False
 
 
 class SelectiveMambaBlock(nn.Module):

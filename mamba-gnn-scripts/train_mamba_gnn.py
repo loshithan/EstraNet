@@ -380,13 +380,8 @@ def train(args):
     # in models/mamba_block.py, NOT to the whole model here.  Compiling the
     # full model causes a hang when grad_checkpoint is active because the
     # compiler cannot trace through checkpoint boundaries (see PyTorch issue
-    # #107041).  Per-function compile on the pure-tensor scan avoids this.
     if args.use_ssm_mamba:
-        from models.mamba_block import _SCAN_COMPILED
-        if _SCAN_COMPILED:
-            print("✓ SSM scan compiled (Triton-fused inner loop, no model-level compile)")
-        else:
-            print("⚠  SSM scan running in eager mode (torch.compile unavailable)")
+        print("✓ SSM scan: eager mode (no torch.compile — avoids multi-minute hang on large loop graphs)")
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel Parameters: {total_params:,}")
@@ -449,10 +444,6 @@ def train(args):
     print("Starting training...")
     print("=" * 80 + "\n", flush=True)
 
-    if args.use_ssm_mamba:
-        print("⏳ First forward pass will JIT-compile the SSM scan kernel."
-              " This takes ~30–90 s on T4 — output will appear once done.",
-              flush=True)
 
     model.train()
     running_loss = 0.0
@@ -498,11 +489,7 @@ def train(args):
             optimizer.zero_grad()
             output = model(data)
             loss   = criterion(output, target)
-            if global_step == 0:
-                print("⏳ Compiling backward pass (Triton) — silent for 3–10 min on T4, please wait...", flush=True)
             loss.backward()
-            if global_step == 0:
-                print("✓ Backward compiled. Training starts now.", flush=True)
 
             # FIX: use args.clip (not hardcoded value)
             grad_norm = torch.nn.utils.clip_grad_norm_(
