@@ -23,51 +23,82 @@ import math
 
 
 # =============================================================================
-# Standalone selective scan — compiled at module level so torch.compile can
-# fuse it into a Triton kernel WITHOUT interfering with grad_checkpoint which
-# wraps the whole SelectiveMambaBlock.forward().  Compiling the full model
-# (torch.compile(model)) causes a hang because the compiler cannot trace
-# through torch.utils.checkpoint boundaries.
+# =============================================================================
+# Parallel prefix selective scan — O(L log L) work, O(log L) sequential depth.
+#
+# WHY: The naive sequential Python for-loop over L=700 timesteps launches
+# ~2800 individual CUDA kernels per forward pass (700 steps × 4 blocks × ~exp,
+# mul, add).  Each kernel launch has ~50 µs Python overhead → ~140 ms overhead
+# per step on A100, giving only ~0.3 step/s instead of the expected 8–12 step/s.
+#
+# FIX: Parallel prefix scan (Blelloch / "associative scan") computes all L
+# hidden states h[0]..h[L-1] using only ceil(log2(L)) ≈ 10 vectorized GPU
+# passes, each operating on the FULL [B, L, d_inner, d_state] tensor.  This
+# replaces 2800 serial kernel launches with ~20 (one mul + one fma per pass).
+#
+# MEMORY: [B=256, L=700, d_inner=128, d_state=16] = 1.46 GB per tensor (pa,pb).
+# Peak during scan: ~4× = ~5.8 GB (pa_old + pb_old + new_a + new_b live at once).
+# With grad_checkpoint wrapping each block, only ONE block's states live in GPU
+# RAM at a time, so total overhead is ~5.8 GB regardless of num_layers.
+# T4 (15 GB) and A100 (40 GB) both handle this comfortably.
+#
+# MATH: Linear recurrence  h[t] = a[t] * h[t-1] + b[t],  h[-1] = 0
+# where  a[t] = exp(Δ[t] · A)  and  b[t] = Δ[t] · B[t] · u[t].
+# The pair (a, b) forms a monoid: (a2,b2) ∘ (a1,b1) = (a2·a1, a2·b1 + b2)
+# (right-to-left composition: a1,b1 applied first, then a2,b2).
+# An inclusive prefix scan of this monoid gives h[0..L-1] in O(log L) steps.
 # =============================================================================
 
 def _ssm_scan(u, delta, A, B, C, D):
-    """Pure-function selective scan (no self, no side effects → compilable).
+    """Parallel prefix selective scan.
 
     Args:
         u     : [B, L, d_inner]
-        delta : [B, L, d_inner]   positive Δ
-        A     : [d_inner, d_state] negative diagonal
-        B     : [B, L, d_state]
-        C     : [B, L, d_state]
-        D     : [d_inner]
+        delta : [B, L, d_inner]   positive Δ (after softplus)
+        A     : [d_inner, d_state] negative diagonal (stored as -exp(A_log))
+        B     : [B, L, d_state]   input projection
+        C     : [B, L, d_state]   output projection
+        D     : [d_inner]         skip connection weight
     Returns:
         y     : [B, L, d_inner]
     """
     B_b, L, d_inner = u.shape
-    d_state = B.shape[-1]
-    h = u.new_zeros(B_b, d_inner, d_state)
-    ys = []
-    for t in range(L):
-        dt_t  = delta[:, t]                                  # [B, di]
-        A_bar = torch.exp(dt_t.unsqueeze(-1) * A[None])     # [B, di, ds]
-        dBu   = (dt_t.unsqueeze(-1)                         # [B, di,  1]
-                 * B[:, t, None, :]                         # [B,  1, ds]
-                 * u[:, t, :, None])                        # [B, di, ds]
-        h  = A_bar * h + dBu
-        y  = (h * C[:, t, None, :]).sum(-1)                 # [B, di]
-        ys.append(y)
-    y = torch.stack(ys, dim=1)                               # [B, L, di]
-    y = y + u * D[None, None, :]
+
+    # ── Step 1: compute per-timestep (a, b) for h[t] = a[t]*h[t-1] + b[t] ──
+    # a[b,t,i,s] = exp( Δ[b,t,i] * A[i,s] )          [B, L, d_inner, d_state]
+    # b[b,t,i,s] = Δ[b,t,i] * B[b,t,s] * u[b,t,i]   [B, L, d_inner, d_state]
+    #
+    # Both are fully parallel over all (b, t, i, s) — no loop needed.
+    pa = torch.exp(delta.unsqueeze(-1) * A[None, None])   # [B, L, di, ds]
+    pb = (delta.unsqueeze(-1)                              # [B, L, di,  1]
+          * B[:, :, None, :]                               # [B, L,  1, ds]
+          * u.unsqueeze(-1))                               # [B, L, di,  1]
+                                                           # → [B, L, di, ds]
+
+    # ── Step 2: inclusive parallel prefix scan using the (a,b) monoid ────────
+    # Composition rule (applied RIGHT-FIRST, i.e. a1,b1 is the earlier step):
+    #   (a2, b2) ∘ (a1, b1)  =  (a2·a1,  a2·b1 + b2)
+    #
+    # After ceil(log2(L)) ≈ 10 passes:
+    #   pb[:, t, :, :]  ==  h[t]   (hidden state at position t)
+    stride = 1
+    while stride < L:
+        src = slice(0, L - stride)   # earlier positions
+        dst = slice(stride, L)       # positions being updated
+        # Combine: earlier=src, later=dst  →  new = later ∘ earlier
+        new_a = pa[:, dst] * pa[:, src]                    # a_later * a_earlier
+        new_b = pa[:, dst] * pb[:, src] + pb[:, dst]       # a_later * b_earlier + b_later
+        pa = torch.cat([pa[:, :stride], new_a], dim=1)
+        pb = torch.cat([pb[:, :stride], new_b], dim=1)
+        stride *= 2
+
+    # ── Step 3: output projection + skip ──────────────────────────────────────
+    # y[b,t,i] = Σ_s  h[b,t,i,s] · C[b,t,s]   +   D[i] · u[b,t,i]
+    y = (pb * C[:, :, None, :]).sum(-1) + u * D[None, None, :]  # [B, L, di]
     return y
 
 
-# DO NOT torch.compile _ssm_scan.
-# The scan is a Python for-loop over L=700 steps.  torch.compile would try
-# to trace all 700 iterations into a single static graph (700 * exp+mul+add
-# ops * 4 blocks = 2800 fused nodes), which takes 5-10+ minutes to compile
-# on any GPU and provides no net speedup for a 284k-param model.
-# Eager mode is fast enough — A100 runs ~8-12 step/s without compile.
-_ssm_scan_fn = _ssm_scan
+_ssm_scan_fn = _ssm_scan   # alias used by SelectiveMambaBlock
 _SCAN_COMPILED = False
 
 
